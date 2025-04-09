@@ -1,0 +1,5 @@
+# pg_log extension
+comment = 'PostgreSQL extension for logging ALTER TABLE commands and protecting tables'
+default_version = '1.0'
+module_pathname = '$libdir/pg_log'
+relocatable = true 

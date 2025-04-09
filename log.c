@@ -1,0 +1,473 @@
+#include "/usr/include/postgresql/16/server/postgres.h"
+
+#include <math.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <setjmp.h>  /* For sigjmp_buf */
+
+#include "access/hash.h"
+#include "access/heapam.h"
+#include "catalog/pg_authid.h"
+#include "catalog/namespace.h"
+#include "catalog/pg_type.h"
+#include "executor/executor.h"
+#include "executor/instrument.h"
+#include "funcapi.h"
+#include "mb/pg_wchar.h"
+#include "miscadmin.h"
+#include "nodes/nodes.h"
+#include "nodes/parsenodes.h"
+#include "parser/analyze.h"
+#include "parser/parsetree.h"
+#include "parser/parser.h"
+#include "parser/scanner.h"
+#include "parser/scansup.h"
+#include "pgstat.h"
+#include "storage/fd.h"
+#include "storage/ipc.h"
+#include "storage/spin.h"
+#include "tcop/utility.h"
+#include "utils/acl.h"
+#include "utils/builtins.h"
+#include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
+#include "utils/memutils.h"
+#include "utils/rel.h"
+#include "utils/relcache.h"
+#include "utils/syscache.h"
+#include "commands/tablecmds.h"
+#include "tcop/tcopprot.h"
+#include "parser/analyze.h"
+
+PG_MODULE_MAGIC;
+
+void _PG_init(void);
+void _PG_fini(void);
+
+/* Global variables */
+static int nested_level = 0;
+static ProcessUtility_hook_type prev_ProcessUtility = NULL;
+static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
+
+/* Function declarations */
+static void write_file(const char *str);
+static bool is_alter_table_command(const char *query_string);
+static bool is_unprotected_table(const char *table_name);
+static void intercept_delete_command(ParseState *pstate, Query *query);
+
+/* Function to be exported to SQL */
+Datum pg_all_queries(PG_FUNCTION_ARGS);
+Datum pg_protect_table(PG_FUNCTION_ARGS);
+Datum pg_unprotect_table(PG_FUNCTION_ARGS);
+
+PG_FUNCTION_INFO_V1(pg_all_queries);
+PG_FUNCTION_INFO_V1(pg_protect_table);
+PG_FUNCTION_INFO_V1(pg_unprotect_table);
+
+/* Process utility hook */
+static void process_utility(PlannedStmt *pstmt,
+                            const char *queryString,
+                            bool readOnlyTree,
+                            ProcessUtilityContext context,
+                            ParamListInfo params,
+                            QueryEnvironment *queryEnv,
+                            DestReceiver *dest,
+                            QueryCompletion *qc);
+
+/* Parse analyze hook */
+static void pg_log_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate);
+
+void
+_PG_init(void)
+{
+    elog(NOTICE, "pg_log extension initializing");
+    
+    /* Save previous hooks */
+    prev_ProcessUtility = ProcessUtility_hook;
+    ProcessUtility_hook = process_utility;
+    
+    prev_post_parse_analyze_hook = post_parse_analyze_hook;
+    post_parse_analyze_hook = pg_log_post_parse_analyze;
+    
+    elog(NOTICE, "pg_log hooks installed successfully");
+}
+
+void
+_PG_fini(void)
+{
+    elog(NOTICE, "pg_log extension unloading");
+    
+    /* Restore previous hooks */
+    ProcessUtility_hook = prev_ProcessUtility;
+    post_parse_analyze_hook = prev_post_parse_analyze_hook;
+}
+
+static void
+write_file(const char *str)
+{
+    FILE *fp = fopen("/tmp/alter_table.log", "a+");
+    if (fp == NULL)
+        elog(ERROR, "log: unable to open log file");
+    fputs(str, fp);
+    fputs("\n", fp);
+    fclose(fp);
+}
+
+/* 
+ * Check if a query string is an ALTER TABLE command
+ */
+static bool
+is_alter_table_command(const char *query_string)
+{
+    /* Skip leading whitespace */
+    while (*query_string && isspace((unsigned char) *query_string))
+        query_string++;
+        
+    /* Check if it starts with ALTER TABLE (case insensitive) */
+    return pg_strncasecmp(query_string, "ALTER TABLE", 11) == 0;
+}
+
+/*
+ * Check if a table is unprotected (i.e., can be deleted from)
+ */
+static bool
+is_unprotected_table(const char *table_name)
+{
+    bool result = false;
+    Relation rel;
+    SysScanDesc scan;
+    HeapTuple tuple;
+    ScanKeyData key[1];
+    
+    elog(NOTICE, "checking if table '%s' is unprotected", table_name);
+    
+    /* Special case: pg_unprotected_tables itself should be unprotected */
+    if (strcmp(table_name, "pg_unprotected_tables") == 0)
+    {
+        elog(NOTICE, "pg_unprotected_tables is always unprotected");
+        return true;
+    }
+    
+    /* Open the pg_unprotected_tables relation */
+    rel = table_open(get_relname_relid("pg_unprotected_tables", 
+                                  get_namespace_oid("public", false)), 
+                AccessShareLock);
+    if (rel == NULL)
+    {
+        elog(WARNING, "Failed to open pg_unprotected_tables");
+        return false;
+    }
+    
+    /* Set up the scan key */
+    ScanKeyInit(&key[0],
+                1, /* attribute number for table_name */
+                BTEqualStrategyNumber,
+                F_TEXTEQ,
+                CStringGetTextDatum(table_name));
+    
+    /* Start the scan */
+    scan = systable_beginscan(rel, InvalidOid, false, NULL, 1, key);
+    
+    /* Check if we have a match */
+    tuple = systable_getnext(scan);
+    if (HeapTupleIsValid(tuple))
+    {
+        result = true;
+        elog(NOTICE, "Table '%s' is unprotected", table_name);
+    }
+    else
+    {
+        elog(NOTICE, "Table '%s' is protected", table_name);
+    }
+    
+    /* Clean up */
+    systable_endscan(scan);
+    table_close(rel, AccessShareLock);
+    
+    return result;
+}
+
+/*
+ * Post parse analyze hook - intercepts DELETE commands
+ */
+static void
+pg_log_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
+{
+    /* Check if it's a DELETE query */
+    if (query->commandType == CMD_DELETE)
+    {
+        elog(NOTICE, "DELETE query detected");
+        intercept_delete_command(pstate, query);
+    }
+    
+    /* Call previous hook if any */
+    if (prev_post_parse_analyze_hook)
+        prev_post_parse_analyze_hook(pstate, query, jstate);
+}
+
+/*
+ * Check for permission to delete from a table
+ */
+static void
+intercept_delete_command(ParseState *pstate, Query *query)
+{
+    RangeTblEntry *rte;
+    char *table_name;
+    
+    if (!query || query->commandType != CMD_DELETE || !query->rtable ||
+        list_length(query->rtable) < 1)
+        return;
+    
+    /* Get the first/main RTE which is the target table for DELETE */
+    rte = (RangeTblEntry *) linitial(query->rtable);
+    if (!rte || rte->rtekind != RTE_RELATION)
+        return;
+    
+    /* Get the table name from the RTE */
+    table_name = get_rel_name(rte->relid);
+    if (!table_name)
+        return;
+    
+    elog(NOTICE, "DELETE operation on table: %s", table_name);
+    
+    /* Check if the table is protected */
+    if (!is_unprotected_table(table_name))
+    {
+        ereport(ERROR,
+            (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+             errmsg("DELETE operations are not allowed on table \"%s\"", 
+                   table_name),
+             errhint("Use pg_unprotect_table('%s') to allow deletion", 
+                    table_name)));
+    }
+}
+
+/*
+ * Main hook function to intercept utility commands
+ */
+static void 
+process_utility(PlannedStmt *pstmt,
+                const char *queryString,
+                bool readOnlyTree,
+                ProcessUtilityContext context,
+                ParamListInfo params,
+                QueryEnvironment *queryEnv,
+                DestReceiver *dest,
+                QueryCompletion *qc)
+{
+    elog(NOTICE, "process_utility hook called");
+    
+    nested_level++;
+    
+    /* Check if this is an ALTER TABLE command */
+    if (queryString && is_alter_table_command(queryString))
+    {
+        /* Log the ALTER TABLE command */
+        write_file(queryString);
+        elog(NOTICE, "ALTER TABLE detected: %s", queryString);
+    }
+    
+    /* Pass the command to the standard/previous processor */
+    elog(NOTICE, "Passing command to standard processor");
+    if (prev_ProcessUtility)
+        prev_ProcessUtility(pstmt, queryString, readOnlyTree,
+                          context, params, queryEnv, dest, qc);
+    else
+        standard_ProcessUtility(pstmt, queryString, readOnlyTree,
+                              context, params, queryEnv, dest, qc);
+    
+    nested_level--;
+    elog(NOTICE, "process_utility hook finished");
+}
+
+/*
+ * Function to protect a table (remove from unprotected list)
+ */
+Datum
+pg_protect_table(PG_FUNCTION_ARGS)
+{
+    text *tablename_text = PG_GETARG_TEXT_PP(0);
+    char *tablename = text_to_cstring(tablename_text);
+    Relation rel;
+    SysScanDesc scan;
+    HeapTuple tuple;
+    ScanKeyData key[1];
+    bool result = false;
+    
+    /* Check if table exists */
+    if (!get_relname_relid(tablename, get_namespace_oid("public", false)))
+    {
+        ereport(ERROR,
+               (errcode(ERRCODE_UNDEFINED_TABLE),
+                errmsg("table \"%s\" does not exist", tablename)));
+    }
+    
+    /* Open the pg_unprotected_tables relation */
+    rel = table_open(get_relname_relid("pg_unprotected_tables", 
+                                   get_namespace_oid("public", false)), 
+                RowExclusiveLock);
+    
+    /* Set up the scan key */
+    ScanKeyInit(&key[0],
+                1, /* attribute number for table_name */
+                BTEqualStrategyNumber,
+                F_TEXTEQ,
+                CStringGetTextDatum(tablename));
+    
+    /* Start the scan */
+    scan = systable_beginscan(rel, InvalidOid, false, NULL, 1, key);
+    
+    /* Find and delete the tuple */
+    tuple = systable_getnext(scan);
+    if (HeapTupleIsValid(tuple))
+    {
+        simple_heap_delete(rel, &tuple->t_self);
+        result = true;
+        ereport(NOTICE,
+               (errmsg("table \"%s\" is now protected", tablename)));
+    }
+    else
+    {
+        ereport(NOTICE,
+               (errmsg("table \"%s\" is already protected", tablename)));
+    }
+    
+    /* Clean up */
+    systable_endscan(scan);
+    table_close(rel, RowExclusiveLock);
+    
+    PG_RETURN_BOOL(result);
+}
+
+/*
+ * Function to unprotect a table (add to unprotected list)
+ */
+Datum
+pg_unprotect_table(PG_FUNCTION_ARGS)
+{
+    text *tablename_text = PG_GETARG_TEXT_PP(0);
+    char *tablename = text_to_cstring(tablename_text);
+    Relation rel;
+    TupleDesc tupdesc;
+    HeapTuple tuple;
+    Datum values[3];
+    bool nulls[3] = {false, false, false};
+    bool result = false;
+    
+    /* Check if table exists */
+    if (!get_relname_relid(tablename, get_namespace_oid("public", false)))
+    {
+        ereport(ERROR,
+               (errcode(ERRCODE_UNDEFINED_TABLE),
+                errmsg("table \"%s\" does not exist", tablename)));
+    }
+    
+    /* Check if table is already unprotected */
+    if (is_unprotected_table(tablename))
+    {
+        ereport(NOTICE,
+               (errmsg("table \"%s\" is already unprotected", tablename)));
+        PG_RETURN_BOOL(true);
+    }
+    
+    /* Open the pg_unprotected_tables relation */
+    rel = table_open(get_relname_relid("pg_unprotected_tables", 
+                                   get_namespace_oid("public", false)), 
+                RowExclusiveLock);
+    
+    tupdesc = RelationGetDescr(rel);
+    
+    /* Set up values for the new tuple */
+    values[0] = CStringGetTextDatum(tablename);
+    values[1] = DirectFunctionCall1(now, (Datum) 0);  /* current timestamp */
+    values[2] = CStringGetTextDatum(GetUserNameFromId(GetUserId(), false));
+    
+    /* Create the tuple */
+    tuple = heap_form_tuple(tupdesc, values, nulls);
+    
+    /* Insert the tuple */
+    simple_heap_insert(rel, tuple);
+    result = true;
+    
+    /* Clean up */
+    heap_freetuple(tuple);
+    table_close(rel, RowExclusiveLock);
+    
+    PG_RETURN_BOOL(result);
+}
+
+/*
+ * Function to list all ALTER TABLE queries
+ */
+Datum
+pg_all_queries(PG_FUNCTION_ARGS)
+{
+    ReturnSetInfo   *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+    TupleDesc	    tupdesc;
+    Tuplestorestate *tupstore;
+    MemoryContext   per_query_ctx;
+    MemoryContext   oldcontext;
+    Datum           values[2];
+    bool            nulls[2] = {false, false};
+    char            pid[25];
+    char            query_buffer[1024];
+    FILE            *fp = NULL;
+    bool            file_exists = false;
+    struct stat     stat_buf;
+
+    /* Check if the log file exists */
+    if (stat("/tmp/alter_table.log", &stat_buf) == 0) {
+        file_exists = true;
+    }
+
+    /* Get the tuple descriptor */
+    if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+        elog(ERROR, "return type must be a row type");
+
+    per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
+    oldcontext = MemoryContextSwitchTo(per_query_ctx);
+    tupstore = tuplestore_begin_heap(true, false, work_mem);
+
+    rsinfo->returnMode = SFRM_Materialize;
+    rsinfo->setResult = tupstore;
+    rsinfo->setDesc = tupdesc;
+
+    /* Try to open the log file */
+    if (file_exists) {
+        fp = fopen("/tmp/alter_table.log", "r");
+    }
+
+    if (fp == NULL) {
+        /* If file doesn't exist or can't be opened, return a placeholder row */
+        snprintf(query_buffer, sizeof(query_buffer), "no ALTER TABLE commands logged");
+        snprintf(pid, sizeof(pid), "invalid pid");
+        
+        values[0] = CStringGetTextDatum(query_buffer);
+        values[1] = CStringGetTextDatum(pid);
+        
+        tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+    } else {
+        /* Process each line in the log file */
+        snprintf(pid, sizeof(pid), "%d", (int)getpid());
+        
+        while (fgets(query_buffer, sizeof(query_buffer) - 1, fp) != NULL) {
+            /* Remove trailing newline if present */
+            size_t len = strlen(query_buffer);
+            if (len > 0 && query_buffer[len-1] == '\n') {
+                query_buffer[len-1] = '\0';
+            }
+            
+            values[0] = CStringGetTextDatum(query_buffer);
+            values[1] = CStringGetTextDatum(pid);
+            
+            tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+        }
+        
+        fclose(fp);
+    }
+
+    tuplestore_donestoring(tupstore);
+    MemoryContextSwitchTo(oldcontext);
+    
+    return (Datum) 0;
+}
