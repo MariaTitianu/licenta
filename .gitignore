@@ -1,0 +1,33 @@
+# PostgreSQL extension build artifacts
+*.o
+*.so
+*.bc
+*.a
+*.dylib
+*.dll
+
+# PostgreSQL include files
+/postgresql/
+
+# Editor/IDE files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+*.old
+
+# Log files
+*.log
+
+# Temporary test files
+results/
+
+# Core dumps
+core
+*.core

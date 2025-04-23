@@ -53,7 +53,8 @@ static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
 static void write_file(const char *str);
 static bool is_alter_table_command(const char *query_string);
 static bool is_unprotected_table(const char *table_name);
-static void intercept_delete_command(ParseState *pstate, Query *query);
+static void intercept_dml_command(ParseState *pstate, Query *query);
+static bool is_protected_ddl_command(Node *parsetree, char **table_name);
 
 /* Function to be exported to SQL */
 Datum pg_all_queries(PG_FUNCTION_ARGS);
@@ -105,7 +106,7 @@ _PG_fini(void)
 static void
 write_file(const char *str)
 {
-    FILE *fp = fopen("/tmp/alter_table.log", "a+");
+    FILE *fp = fopen("/tmp/pg_protected_ops.log", "a+");
     if (fp == NULL)
         elog(ERROR, "log: unable to open log file");
     fputs(str, fp);
@@ -128,7 +129,7 @@ is_alter_table_command(const char *query_string)
 }
 
 /*
- * Check if a table is unprotected (i.e., can be deleted from)
+ * Check if a table is unprotected (i.e., can be modified)
  */
 static bool
 is_unprotected_table(const char *table_name)
@@ -188,16 +189,66 @@ is_unprotected_table(const char *table_name)
 }
 
 /*
- * Post parse analyze hook - intercepts DELETE commands
+ * Check if a DDL command (DROP, ALTER) affects a protected table
+ * Returns true if this is a protected DDL command, and sets table_name
+ */
+static bool
+is_protected_ddl_command(Node *parsetree, char **table_name)
+{
+    *table_name = NULL;
+    
+    if (!parsetree)
+        return false;
+    
+    /* Check for DROP TABLE */
+    if (nodeTag(parsetree) == T_DropStmt)
+    {
+        DropStmt *stmt = (DropStmt *) parsetree;
+        
+        /* Only intercept DROP TABLE commands */
+        if (stmt->removeType == OBJECT_TABLE && stmt->objects && list_length(stmt->objects) > 0)
+        {
+            /* Get the first table name from the list */
+            List *first_name = (List *) linitial(stmt->objects);
+            if (list_length(first_name) > 0)
+            {
+                /* Take just the table name (last element in the qualified name list) */
+                *table_name = pstrdup(strVal(llast(first_name)));
+                elog(NOTICE, "DROP operation detected on table: %s", *table_name);
+                return true;
+            }
+        }
+    }
+    /* Check for ALTER TABLE */
+    else if (nodeTag(parsetree) == T_AlterTableStmt)
+    {
+        AlterTableStmt *stmt = (AlterTableStmt *) parsetree;
+        if (stmt->relation && stmt->relation->relname)
+        {
+            *table_name = pstrdup(stmt->relation->relname);
+            elog(NOTICE, "ALTER operation detected on table: %s", *table_name);
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/*
+ * Post parse analyze hook - intercepts DML commands (DELETE, UPDATE)
  */
 static void
 pg_log_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 {
-    /* Check if it's a DELETE query */
-    if (query->commandType == CMD_DELETE)
+    /* Check if it's a DELETE or UPDATE query */
+    if (query->commandType == CMD_DELETE || query->commandType == CMD_UPDATE)
     {
-        elog(NOTICE, "DELETE query detected");
-        intercept_delete_command(pstate, query);
+        if (query->commandType == CMD_DELETE)
+            elog(NOTICE, "DELETE query detected");
+        else
+            elog(NOTICE, "UPDATE query detected");
+            
+        intercept_dml_command(pstate, query);
     }
     
     /* Call previous hook if any */
@@ -206,19 +257,20 @@ pg_log_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 }
 
 /*
- * Check for permission to delete from a table
+ * Check for permission to modify a table (DELETE, UPDATE)
  */
 static void
-intercept_delete_command(ParseState *pstate, Query *query)
+intercept_dml_command(ParseState *pstate, Query *query)
 {
     RangeTblEntry *rte;
     char *table_name;
+    char *operation_type = (query->commandType == CMD_DELETE) ? "DELETE" : "UPDATE";
     
-    if (!query || query->commandType != CMD_DELETE || !query->rtable ||
-        list_length(query->rtable) < 1)
+    if (!query || (query->commandType != CMD_DELETE && query->commandType != CMD_UPDATE) || 
+        !query->rtable || list_length(query->rtable) < 1)
         return;
     
-    /* Get the first/main RTE which is the target table for DELETE */
+    /* Get the first/main RTE which is the target table for modification */
     rte = (RangeTblEntry *) linitial(query->rtable);
     if (!rte || rte->rtekind != RTE_RELATION)
         return;
@@ -228,18 +280,23 @@ intercept_delete_command(ParseState *pstate, Query *query)
     if (!table_name)
         return;
     
-    elog(NOTICE, "DELETE operation on table: %s", table_name);
+    elog(NOTICE, "%s operation on table: %s", operation_type, table_name);
     
     /* Check if the table is protected */
     if (!is_unprotected_table(table_name))
     {
         ereport(ERROR,
             (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-             errmsg("DELETE operations are not allowed on table \"%s\"", 
-                   table_name),
-             errhint("Use pg_unprotect_table('%s') to allow deletion", 
+             errmsg("%s operations are not allowed on table \"%s\"", 
+                   operation_type, table_name),
+             errhint("Use pg_unprotect_table('%s') to allow modification", 
                     table_name)));
     }
+    
+    /* Log the operation */
+    char log_message[1024];
+    snprintf(log_message, sizeof(log_message), "ALLOWED %s ON %s", operation_type, table_name);
+    write_file(log_message);
 }
 
 /*
@@ -255,14 +312,45 @@ process_utility(PlannedStmt *pstmt,
                 DestReceiver *dest,
                 QueryCompletion *qc)
 {
+    Node *parsetree = pstmt->utilityStmt;
+    char *table_name = NULL;
+    
     elog(NOTICE, "process_utility hook called");
     
     nested_level++;
     
-    /* Check if this is an ALTER TABLE command */
+    /* Check if this is a DDL operation on a protected table */
+    if (is_protected_ddl_command(parsetree, &table_name))
+    {
+        if (table_name)
+        {
+            /* Check if the table is unprotected */
+            if (!is_unprotected_table(table_name))
+            {
+                char *cmd_type = (nodeTag(parsetree) == T_DropStmt) ? "DROP" : "ALTER";
+                
+                ereport(ERROR,
+                    (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+                     errmsg("%s operations are not allowed on table \"%s\"", 
+                           cmd_type, table_name),
+                     errhint("Use pg_unprotect_table('%s') to allow modification", 
+                            table_name)));
+            }
+            
+            /* Log the operation */
+            char log_message[1024];
+            char *cmd_type = (nodeTag(parsetree) == T_DropStmt) ? "DROP" : "ALTER";
+            snprintf(log_message, sizeof(log_message), "ALLOWED %s ON %s", cmd_type, table_name);
+            write_file(log_message);
+            
+            pfree(table_name);
+        }
+    }
+    
+    /* Log if this is an ALTER TABLE command */
     if (queryString && is_alter_table_command(queryString))
     {
-        /* Log the ALTER TABLE command */
+        /* Also log the ALTER TABLE command to the file for backward compatibility */
         write_file(queryString);
         elog(NOTICE, "ALTER TABLE detected: %s", queryString);
     }
@@ -324,7 +412,12 @@ pg_protect_table(PG_FUNCTION_ARGS)
         simple_heap_delete(rel, &tuple->t_self);
         result = true;
         ereport(NOTICE,
-               (errmsg("table \"%s\" is now protected", tablename)));
+               (errmsg("table \"%s\" is now protected from DELETE, UPDATE, ALTER, and DROP", tablename)));
+        
+        /* Log the protection */
+        char log_message[1024];
+        snprintf(log_message, sizeof(log_message), "PROTECTED TABLE %s", tablename);
+        write_file(log_message);
     }
     else
     {
@@ -389,6 +482,14 @@ pg_unprotect_table(PG_FUNCTION_ARGS)
     simple_heap_insert(rel, tuple);
     result = true;
     
+    ereport(NOTICE,
+           (errmsg("table \"%s\" is now unprotected and allows DELETE, UPDATE, ALTER, and DROP", tablename)));
+    
+    /* Log the unprotection */
+    char log_message[1024];
+    snprintf(log_message, sizeof(log_message), "UNPROTECTED TABLE %s", tablename);
+    write_file(log_message);
+    
     /* Clean up */
     heap_freetuple(tuple);
     table_close(rel, RowExclusiveLock);
@@ -397,7 +498,7 @@ pg_unprotect_table(PG_FUNCTION_ARGS)
 }
 
 /*
- * Function to list all ALTER TABLE queries
+ * Function to list all logged operations
  */
 Datum
 pg_all_queries(PG_FUNCTION_ARGS)
@@ -416,7 +517,7 @@ pg_all_queries(PG_FUNCTION_ARGS)
     struct stat     stat_buf;
 
     /* Check if the log file exists */
-    if (stat("/tmp/alter_table.log", &stat_buf) == 0) {
+    if (stat("/tmp/pg_protected_ops.log", &stat_buf) == 0) {
         file_exists = true;
     }
 
@@ -434,12 +535,12 @@ pg_all_queries(PG_FUNCTION_ARGS)
 
     /* Try to open the log file */
     if (file_exists) {
-        fp = fopen("/tmp/alter_table.log", "r");
+        fp = fopen("/tmp/pg_protected_ops.log", "r");
     }
 
     if (fp == NULL) {
         /* If file doesn't exist or can't be opened, return a placeholder row */
-        snprintf(query_buffer, sizeof(query_buffer), "no ALTER TABLE commands logged");
+        snprintf(query_buffer, sizeof(query_buffer), "no operations logged");
         snprintf(pid, sizeof(pid), "invalid pid");
         
         values[0] = CStringGetTextDatum(query_buffer);
