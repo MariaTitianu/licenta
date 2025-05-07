@@ -1,14 +1,13 @@
--- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION pg_log" to load this file. \quit
 
--- Create table to store unprotected tables
+
 CREATE TABLE pg_unprotected_tables (
     table_name TEXT PRIMARY KEY,
     unprotect_time TIMESTAMP NOT NULL DEFAULT now(),
     unprotected_by TEXT NOT NULL
 );
 
--- Register the C functions
+
 CREATE FUNCTION pg_all_queries() 
 RETURNS TABLE (query TEXT, pid TEXT)
 AS 'MODULE_PATHNAME', 'pg_all_queries'
@@ -22,4 +21,20 @@ LANGUAGE C STRICT;
 CREATE FUNCTION pg_unprotect_table(tablename TEXT) 
 RETURNS BOOLEAN
 AS 'MODULE_PATHNAME', 'pg_unprotect_table'
-LANGUAGE C STRICT; 
+LANGUAGE C STRICT;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'table_manager_admin') THEN
+    CREATE ROLE table_manager_admin;
+    RAISE NOTICE 'Role table_manager_admin created.';
+  ELSE
+    RAISE NOTICE 'Role table_manager_admin already exists.';
+  END IF;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION pg_protect_table(TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION pg_unprotect_table(TEXT) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION pg_protect_table(TEXT) TO table_manager_admin;
+GRANT EXECUTE ON FUNCTION pg_unprotect_table(TEXT) TO table_manager_admin; 

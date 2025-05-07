@@ -3,7 +3,7 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <setjmp.h>  /* For sigjmp_buf */
+#include <setjmp.h>
 
 #include "access/hash.h"
 #include "access/heapam.h"
@@ -44,19 +44,19 @@ PG_MODULE_MAGIC;
 void _PG_init(void);
 void _PG_fini(void);
 
-/* Global variables */
+
 static int nested_level = 0;
 static ProcessUtility_hook_type prev_ProcessUtility = NULL;
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
 
-/* Function declarations */
+
 static void write_file(const char *str);
 static bool is_alter_table_command(const char *query_string);
 static bool is_unprotected_table(const char *table_name);
 static void intercept_dml_command(ParseState *pstate, Query *query);
 static bool is_protected_ddl_command(Node *parsetree, char **table_name);
 
-/* Function to be exported to SQL */
+
 Datum pg_all_queries(PG_FUNCTION_ARGS);
 Datum pg_protect_table(PG_FUNCTION_ARGS);
 Datum pg_unprotect_table(PG_FUNCTION_ARGS);
@@ -65,7 +65,6 @@ PG_FUNCTION_INFO_V1(pg_all_queries);
 PG_FUNCTION_INFO_V1(pg_protect_table);
 PG_FUNCTION_INFO_V1(pg_unprotect_table);
 
-/* Process utility hook */
 static void process_utility(PlannedStmt *pstmt,
                             const char *queryString,
                             bool readOnlyTree,
@@ -75,7 +74,7 @@ static void process_utility(PlannedStmt *pstmt,
                             DestReceiver *dest,
                             QueryCompletion *qc);
 
-/* Parse analyze hook */
+
 static void pg_log_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate);
 
 void
@@ -83,7 +82,7 @@ _PG_init(void)
 {
     elog(NOTICE, "pg_log extension initializing");
     
-    /* Save previous hooks */
+    
     prev_ProcessUtility = ProcessUtility_hook;
     ProcessUtility_hook = process_utility;
     
@@ -97,8 +96,6 @@ void
 _PG_fini(void)
 {
     elog(NOTICE, "pg_log extension unloading");
-    
-    /* Restore previous hooks */
     ProcessUtility_hook = prev_ProcessUtility;
     post_parse_analyze_hook = prev_post_parse_analyze_hook;
 }
@@ -114,23 +111,19 @@ write_file(const char *str)
     fclose(fp);
 }
 
-/* 
- * Check if a query string is an ALTER TABLE command
- */
+
 static bool
 is_alter_table_command(const char *query_string)
 {
-    /* Skip leading whitespace */
+    
     while (*query_string && isspace((unsigned char) *query_string))
         query_string++;
         
-    /* Check if it starts with ALTER TABLE (case insensitive) */
+
     return pg_strncasecmp(query_string, "ALTER TABLE", 11) == 0;
 }
 
-/*
- * Check if a table is unprotected (i.e., can be modified)
- */
+
 static bool
 is_unprotected_table(const char *table_name)
 {
@@ -142,14 +135,14 @@ is_unprotected_table(const char *table_name)
     
     elog(NOTICE, "checking if table '%s' is unprotected", table_name);
     
-    /* Special case: pg_unprotected_tables itself should be unprotected */
+   
     if (strcmp(table_name, "pg_unprotected_tables") == 0)
     {
         elog(NOTICE, "pg_unprotected_tables is always unprotected");
         return true;
     }
     
-    /* Open the pg_unprotected_tables relation */
+  
     rel = table_open(get_relname_relid("pg_unprotected_tables", 
                                   get_namespace_oid("public", false)), 
                 AccessShareLock);
@@ -159,17 +152,16 @@ is_unprotected_table(const char *table_name)
         return false;
     }
     
-    /* Set up the scan key */
+    
     ScanKeyInit(&key[0],
-                1, /* attribute number for table_name */
+                1, 
                 BTEqualStrategyNumber,
                 F_TEXTEQ,
                 CStringGetTextDatum(table_name));
+
     
-    /* Start the scan */
     scan = systable_beginscan(rel, InvalidOid, false, NULL, 1, key);
     
-    /* Check if we have a match */
     tuple = systable_getnext(scan);
     if (HeapTupleIsValid(tuple))
     {
@@ -181,17 +173,13 @@ is_unprotected_table(const char *table_name)
         elog(NOTICE, "Table '%s' is protected", table_name);
     }
     
-    /* Clean up */
+   
     systable_endscan(scan);
     table_close(rel, AccessShareLock);
     
     return result;
 }
 
-/*
- * Check if a DDL command (DROP, ALTER) affects a protected table
- * Returns true if this is a protected DDL command, and sets table_name
- */
 static bool
 is_protected_ddl_command(Node *parsetree, char **table_name)
 {
@@ -200,26 +188,23 @@ is_protected_ddl_command(Node *parsetree, char **table_name)
     if (!parsetree)
         return false;
     
-    /* Check for DROP TABLE */
+    
     if (nodeTag(parsetree) == T_DropStmt)
     {
         DropStmt *stmt = (DropStmt *) parsetree;
         
-        /* Only intercept DROP TABLE commands */
         if (stmt->removeType == OBJECT_TABLE && stmt->objects && list_length(stmt->objects) > 0)
         {
-            /* Get the first table name from the list */
+            
             List *first_name = (List *) linitial(stmt->objects);
             if (list_length(first_name) > 0)
             {
-                /* Take just the table name (last element in the qualified name list) */
                 *table_name = pstrdup(strVal(llast(first_name)));
                 elog(NOTICE, "DROP operation detected on table: %s", *table_name);
                 return true;
             }
         }
     }
-    /* Check for ALTER TABLE */
     else if (nodeTag(parsetree) == T_AlterTableStmt)
     {
         AlterTableStmt *stmt = (AlterTableStmt *) parsetree;
@@ -234,13 +219,9 @@ is_protected_ddl_command(Node *parsetree, char **table_name)
     return false;
 }
 
-/*
- * Post parse analyze hook - intercepts DML commands (DELETE, UPDATE)
- */
 static void
 pg_log_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 {
-    /* Check if it's a DELETE or UPDATE query */
     if (query->commandType == CMD_DELETE || query->commandType == CMD_UPDATE)
     {
         if (query->commandType == CMD_DELETE)
@@ -251,14 +232,10 @@ pg_log_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
         intercept_dml_command(pstate, query);
     }
     
-    /* Call previous hook if any */
     if (prev_post_parse_analyze_hook)
         prev_post_parse_analyze_hook(pstate, query, jstate);
 }
 
-/*
- * Check for permission to modify a table (DELETE, UPDATE)
- */
 static void
 intercept_dml_command(ParseState *pstate, Query *query)
 {
@@ -270,19 +247,16 @@ intercept_dml_command(ParseState *pstate, Query *query)
         !query->rtable || list_length(query->rtable) < 1)
         return;
     
-    /* Get the first/main RTE which is the target table for modification */
     rte = (RangeTblEntry *) linitial(query->rtable);
     if (!rte || rte->rtekind != RTE_RELATION)
         return;
     
-    /* Get the table name from the RTE */
     table_name = get_rel_name(rte->relid);
     if (!table_name)
         return;
     
     elog(NOTICE, "%s operation on table: %s", operation_type, table_name);
     
-    /* Check if the table is protected */
     if (!is_unprotected_table(table_name))
     {
         ereport(ERROR,
@@ -293,15 +267,11 @@ intercept_dml_command(ParseState *pstate, Query *query)
                     table_name)));
     }
     
-    /* Log the operation */
     char log_message[1024];
     snprintf(log_message, sizeof(log_message), "ALLOWED %s ON %s", operation_type, table_name);
     write_file(log_message);
 }
 
-/*
- * Main hook function to intercept utility commands
- */
 static void 
 process_utility(PlannedStmt *pstmt,
                 const char *queryString,
@@ -319,12 +289,10 @@ process_utility(PlannedStmt *pstmt,
     
     nested_level++;
     
-    /* Check if this is a DDL operation on a protected table */
     if (is_protected_ddl_command(parsetree, &table_name))
     {
         if (table_name)
         {
-            /* Check if the table is unprotected */
             if (!is_unprotected_table(table_name))
             {
                 char *cmd_type = (nodeTag(parsetree) == T_DropStmt) ? "DROP" : "ALTER";
@@ -337,7 +305,6 @@ process_utility(PlannedStmt *pstmt,
                             table_name)));
             }
             
-            /* Log the operation */
             char log_message[1024];
             char *cmd_type = (nodeTag(parsetree) == T_DropStmt) ? "DROP" : "ALTER";
             snprintf(log_message, sizeof(log_message), "ALLOWED %s ON %s", cmd_type, table_name);
@@ -347,15 +314,11 @@ process_utility(PlannedStmt *pstmt,
         }
     }
     
-    /* Log if this is an ALTER TABLE command */
     if (queryString && is_alter_table_command(queryString))
     {
-        /* Also log the ALTER TABLE command to the file for backward compatibility */
         write_file(queryString);
         elog(NOTICE, "ALTER TABLE detected: %s", queryString);
     }
-    
-    /* Pass the command to the standard/previous processor */
     elog(NOTICE, "Passing command to standard processor");
     if (prev_ProcessUtility)
         prev_ProcessUtility(pstmt, queryString, readOnlyTree,
@@ -368,9 +331,6 @@ process_utility(PlannedStmt *pstmt,
     elog(NOTICE, "process_utility hook finished");
 }
 
-/*
- * Function to protect a table (remove from unprotected list)
- */
 Datum
 pg_protect_table(PG_FUNCTION_ARGS)
 {
@@ -382,7 +342,6 @@ pg_protect_table(PG_FUNCTION_ARGS)
     ScanKeyData key[1];
     bool result = false;
     
-    /* Check if table exists */
     if (!get_relname_relid(tablename, get_namespace_oid("public", false)))
     {
         ereport(ERROR,
@@ -390,22 +349,18 @@ pg_protect_table(PG_FUNCTION_ARGS)
                 errmsg("table \"%s\" does not exist", tablename)));
     }
     
-    /* Open the pg_unprotected_tables relation */
     rel = table_open(get_relname_relid("pg_unprotected_tables", 
                                    get_namespace_oid("public", false)), 
                 RowExclusiveLock);
     
-    /* Set up the scan key */
     ScanKeyInit(&key[0],
-                1, /* attribute number for table_name */
+                1, 
                 BTEqualStrategyNumber,
                 F_TEXTEQ,
                 CStringGetTextDatum(tablename));
     
-    /* Start the scan */
     scan = systable_beginscan(rel, InvalidOid, false, NULL, 1, key);
     
-    /* Find and delete the tuple */
     tuple = systable_getnext(scan);
     if (HeapTupleIsValid(tuple))
     {
@@ -414,7 +369,6 @@ pg_protect_table(PG_FUNCTION_ARGS)
         ereport(NOTICE,
                (errmsg("table \"%s\" is now protected from DELETE, UPDATE, ALTER, and DROP", tablename)));
         
-        /* Log the protection */
         char log_message[1024];
         snprintf(log_message, sizeof(log_message), "PROTECTED TABLE %s", tablename);
         write_file(log_message);
@@ -425,16 +379,13 @@ pg_protect_table(PG_FUNCTION_ARGS)
                (errmsg("table \"%s\" is already protected", tablename)));
     }
     
-    /* Clean up */
     systable_endscan(scan);
     table_close(rel, RowExclusiveLock);
     
     PG_RETURN_BOOL(result);
 }
 
-/*
- * Function to unprotect a table (add to unprotected list)
- */
+
 Datum
 pg_unprotect_table(PG_FUNCTION_ARGS)
 {
@@ -447,7 +398,6 @@ pg_unprotect_table(PG_FUNCTION_ARGS)
     bool nulls[3] = {false, false, false};
     bool result = false;
     
-    /* Check if table exists */
     if (!get_relname_relid(tablename, get_namespace_oid("public", false)))
     {
         ereport(ERROR,
@@ -455,7 +405,6 @@ pg_unprotect_table(PG_FUNCTION_ARGS)
                 errmsg("table \"%s\" does not exist", tablename)));
     }
     
-    /* Check if table is already unprotected */
     if (is_unprotected_table(tablename))
     {
         ereport(NOTICE,
@@ -463,43 +412,36 @@ pg_unprotect_table(PG_FUNCTION_ARGS)
         PG_RETURN_BOOL(true);
     }
     
-    /* Open the pg_unprotected_tables relation */
     rel = table_open(get_relname_relid("pg_unprotected_tables", 
                                    get_namespace_oid("public", false)), 
                 RowExclusiveLock);
     
     tupdesc = RelationGetDescr(rel);
     
-    /* Set up values for the new tuple */
     values[0] = CStringGetTextDatum(tablename);
     values[1] = DirectFunctionCall1(now, (Datum) 0);  /* current timestamp */
     values[2] = CStringGetTextDatum(GetUserNameFromId(GetUserId(), false));
     
-    /* Create the tuple */
+    
     tuple = heap_form_tuple(tupdesc, values, nulls);
     
-    /* Insert the tuple */
     simple_heap_insert(rel, tuple);
     result = true;
     
     ereport(NOTICE,
            (errmsg("table \"%s\" is now unprotected and allows DELETE, UPDATE, ALTER, and DROP", tablename)));
     
-    /* Log the unprotection */
     char log_message[1024];
     snprintf(log_message, sizeof(log_message), "UNPROTECTED TABLE %s", tablename);
     write_file(log_message);
     
-    /* Clean up */
     heap_freetuple(tuple);
     table_close(rel, RowExclusiveLock);
     
     PG_RETURN_BOOL(result);
 }
 
-/*
- * Function to list all logged operations
- */
+
 Datum
 pg_all_queries(PG_FUNCTION_ARGS)
 {
@@ -516,12 +458,10 @@ pg_all_queries(PG_FUNCTION_ARGS)
     bool            file_exists = false;
     struct stat     stat_buf;
 
-    /* Check if the log file exists */
     if (stat("/tmp/pg_protected_ops.log", &stat_buf) == 0) {
         file_exists = true;
     }
 
-    /* Get the tuple descriptor */
     if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
         elog(ERROR, "return type must be a row type");
 
@@ -533,13 +473,11 @@ pg_all_queries(PG_FUNCTION_ARGS)
     rsinfo->setResult = tupstore;
     rsinfo->setDesc = tupdesc;
 
-    /* Try to open the log file */
     if (file_exists) {
         fp = fopen("/tmp/pg_protected_ops.log", "r");
     }
 
     if (fp == NULL) {
-        /* If file doesn't exist or can't be opened, return a placeholder row */
         snprintf(query_buffer, sizeof(query_buffer), "no operations logged");
         snprintf(pid, sizeof(pid), "invalid pid");
         
@@ -548,11 +486,9 @@ pg_all_queries(PG_FUNCTION_ARGS)
         
         tuplestore_putvalues(tupstore, tupdesc, values, nulls);
     } else {
-        /* Process each line in the log file */
         snprintf(pid, sizeof(pid), "%d", (int)getpid());
         
         while (fgets(query_buffer, sizeof(query_buffer) - 1, fp) != NULL) {
-            /* Remove trailing newline if present */
             size_t len = strlen(query_buffer);
             if (len > 0 && query_buffer[len-1] == '\n') {
                 query_buffer[len-1] = '\0';
