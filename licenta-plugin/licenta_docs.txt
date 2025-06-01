@@ -1,0 +1,8 @@
+postgresql extension  https://www.percona.com/blog/writing-postgresql-extensions-is-fun-c-language/
+dinamic loading for  https://www.postgresql.org/docs/17/xfunc-c.html#:~:text=Optionally%2C%20a%20dynamically%20loaded%20file,unload%20a%20dynamically%20loaded%20file
+pgAudit - logging https://www.pgaudit.org/#section_one
+exemplu de https://github.com/taminomara/psql-hooks/blob/master/Detailed.md#executor-hooks
+Row Security Policies - https://www.postgresql.org/docs/current/ddl-rowsecurity.html
+Privileges - https://www.postgresql.org/docs/current/ddl-priv.html
+Role Attributes - https://www.postgresql.org/docs/current/role-attributes.html
+Database Roles - https://www.postgresql.org/docs/current/user-manag.html

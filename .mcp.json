@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "postgres-licenta_protected": {
+      "command": "postgres-mcp",
+      "args": [
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://postgres:postgres@localhost:5432/licenta_protected"
+      }
+    },
+    "postgres-licenta_unprotected": {
+      "command": "postgres-mcp",
+      "args": [
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://postgres:postgres@localhost:5432/licenta_unprotected"
+      }
+    }
+  }
+}

@@ -1,0 +1,99 @@
+
+# Differences Between Our Implementation and the Requested Extension
+
+Our implementation focused specifically on protecting tables from DELETE operations while tracking ALTER TABLE commands, whereas the requested extension is considerably more comprehensive:
+
+## Scope of Operations
+
+**Our Implementation:**
+- Focused only on protecting tables from DELETE operations
+- Only logs ALTER TABLE commands
+
+**Requested Extension:**
+- Intercepts all DDL commands (CREATE, ALTER, DROP, TRUNCATE)
+- Intercepts all DML commands (UPDATE, DELETE, INSERT)
+- Much more comprehensive command tracking
+
+## Hook Usage
+
+**Our Implementation:**
+- Uses ProcessUtility_hook for intercepting DDL operations (ALTER TABLE)
+- Uses post_parse_analyze_hook to intercept DELETE operations
+- Specifically targets these two operations
+
+**Requested Extension:**
+- Uses ProcessUtility_hook for all DDL commands
+- Uses ExecutorStart_hook for all DML commands
+- More extensive hook implementation
+
+## Prevention Mechanism
+
+**Our Implementation:**
+- Table-specific protection using a whitelist approach (tables need to be unprotected)
+- Protection is permanent unless explicitly changed via SQL functions
+- Row-level detail of which tables are protected/unprotected
+
+**Requested Extension:**
+- Global prevention mechanism with a configurable flag
+- Simple on/off switch for all operations of a certain type
+- Less granular but easier to manage globally
+
+## Logging Approach
+
+**Our Implementation:**
+- Logs ALTER TABLE commands to a file (/tmp/alter_table.log)
+- Uses NOTICE messages for debugging
+- Permanent storage of logged commands
+
+**Requested Extension:**
+- Logs all operations to PostgreSQL server logs
+- Uses elog(LOG, ...) for all intercepted commands
+- More comprehensive but potentially high-volume logging
+
+## Extension Design
+
+**Our Implementation:**
+- SQL interface for managing table protection (pg_protect_table, pg_unprotect_table)
+- User-friendly functions for enabling/disabling protection
+- Persistent storage of protection settings in a database table
+
+**Requested Extension:**
+- Simpler implementation with configuration flags
+- No SQL interface needed
+- More suitable for system-wide policy enforcement
+
+The requested extension provides broader protection and monitoring capabilities across all databases, while our implementation offers finer-grained control for DELETE operations specifically.
+
+
+
+
+
+For intercepting PostgreSQL operations, the hook choice significantly impacts reliability and performance:
+
+### Best Hook Approach
+
+**For DDL Commands**: ProcessUtility_hook is definitely best
+- Catches all utility commands before execution
+- Standard approach recommended by PostgreSQL
+- Low overhead since DDL operations are less frequent
+
+**For DML Commands**: The ideal approach depends on requirements:
+
+1. **post_parse_analyze_hook** (our implementation):
+   - Intercepts commands earlier in the processing pipeline
+   - Better for prevention because it blocks before planning/optimization
+   - Lower overhead as it prevents unnecessary planning work
+   - More reliable for preventing operations
+
+2. **ExecutorStart_hook** (requested extension):
+   - Catches commands just before execution when query plan is already built
+   - Better for collecting execution statistics/metadata
+   - More information available about how the query will execute
+   - Slightly higher overhead as planning has already occurred
+
+**Most Complete Approach**: Use both post_parse_analyze_hook and ExecutorStart_hook
+- post_parse_analyze_hook for early prevention
+- ExecutorStart_hook for detailed logging and statistics
+- ProcessUtility_hook for DDL commands
+
+For a pure security extension focused on prevention, post_parse_analyze_hook is superior. For a monitoring/auditing extension, ExecutorStart_hook provides more details.
