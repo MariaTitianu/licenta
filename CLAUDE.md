@@ -92,3 +92,23 @@ The application is currently a skeleton that needs implementation. Expected arch
 - Needs PostgreSQL driver dependency in pom.xml
 - Should implement entities, repositories, services, and controllers for table protection management
 - Must configure database connection to use `table_manager_admin` role
+
+## Development Guidelines
+
+### Documentation Requirements
+- **Document all changes**: All implementation documentation must be written in `DOCUMENTATION.md` explaining what was implemented, why, and how it works
+- **Update CLAUDE.md**: As you implement new features, add relevant commands, architecture details, or important notes to this file
+- **Code comments**: Add meaningful comments to complex logic or integration points
+- **Commit messages**: Write clear, descriptive commit messages explaining the changes
+
+### Documentation Structure
+- **DOCUMENTATION.md**: Primary documentation file for all implementation details, design decisions, and feature explanations
+- **CLAUDE.md**: Reference guide for Claude Code with commands and architecture overview (this file)
+- **README.md**: Public-facing project overview and setup instructions
+
+### When to Update CLAUDE.md
+- After adding new build/test/run commands
+- When implementing significant architectural changes
+- After creating new integration points between components
+- When discovering important configuration requirements
+- After resolving complex issues that future developers might encounter
