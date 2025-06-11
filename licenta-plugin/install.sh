@@ -1,9 +1,9 @@
 #!/bin/bash
-# Installation script for pg_log extension
+# Installation script for pg_warden extension
 
 set -e  # Exit on error
 
-echo "Installing pg_log PostgreSQL extension..."
+echo "Installing pg_warden PostgreSQL extension..."
 
 # Determine PostgreSQL major version
 if command -v pg_config > /dev/null; then
@@ -38,6 +38,6 @@ sudo make install
 echo "Installation complete!"
 echo
 echo "To activate the extension in your database, connect to PostgreSQL and run:"
-echo "  CREATE EXTENSION pg_log;"
+echo "  CREATE EXTENSION pg_warden;"
 echo
 echo "For more information, see README.md" 

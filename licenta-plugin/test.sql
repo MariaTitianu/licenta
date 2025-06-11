@@ -13,8 +13,8 @@ INSERT INTO protected (name) VALUES
     ('Test Row 4'),
     ('Test Row 5');
 
-SELECT pg_protect_table('protected');
---SELECT pg_unprotect_table('protected');
+SELECT warden_protect('protected');
+--SELECT warden_unprotect('protected');
 
 SELECT * FROM protected;
 
@@ -31,7 +31,7 @@ ALTER TABLE protected ADD COLUMN description TEXT;
 DROP TABLE protected;
 
 
--- SELECT pg_unprotect_table('protected');
+-- SELECT warden_unprotect('protected');
 
 
 -- DELETE FROM protected WHERE id > 2;
@@ -39,6 +39,6 @@ DROP TABLE protected;
 -- ALTER TABLE protected ADD COLUMN description TEXT;
 
 
--- SELECT pg_protect_table('protected');
+-- SELECT warden_protect('protected');
 
 -- UPDATE protected SET name = 'Another change' WHERE id = 1;

@@ -1,0 +1,53 @@
+.mainDiv {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.tableDiv {
+    display: flex;
+    flex: 4;
+    flex-flow: column nowrap;
+    padding: 1rem;
+}
+
+.sidebarDiv {
+    display: flex;
+    flex: 1;
+    flex-flow: column nowrap;
+    justify-content: space-between;
+    padding: 1rem;
+}
+
+.userFieldsDiv {
+    display: flex;
+    flex-flow: column nowrap;
+}
+
+.deviceFieldsDiv {
+    display: flex;
+    flex-flow: column nowrap;
+}
+
+.buttonsDiv {
+    display: flex;
+    justify-content: space-around;
+}
+
+.loadingDiv {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+}
+
+.unauthorizedDiv {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    flex-flow: column nowrap;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}

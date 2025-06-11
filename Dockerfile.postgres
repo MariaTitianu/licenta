@@ -1,0 +1,30 @@
+# Multi-stage Dockerfile for PostgreSQL with pg_warden extension
+# Stage 1: Build the extension
+FROM postgres:16 AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-server-dev-16 \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy source code
+COPY licenta-plugin /tmp/pg_warden
+
+# Build the extension
+WORKDIR /tmp/pg_warden
+RUN make clean && make
+
+# Stage 2: Final image
+FROM postgres:16
+
+# Copy compiled extension from builder
+COPY --from=builder /tmp/pg_warden/pg_warden.so /usr/lib/postgresql/16/lib/
+COPY --from=builder /tmp/pg_warden/pg_warden.control /usr/share/postgresql/16/extension/
+COPY --from=builder /tmp/pg_warden/pg_warden--1.0.sql /usr/share/postgresql/16/extension/
+
+# Copy initialization script
+COPY docker-init/01-init.sql /docker-entrypoint-initdb.d/
+
+# Set PostgreSQL to preload the extension via command line
+CMD ["postgres", "-c", "shared_preload_libraries=pg_warden"]

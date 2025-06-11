@@ -7,7 +7,7 @@ A comprehensive database security management system that provides table-level pr
 - **Table Protection**: Prevent DELETE, UPDATE, ALTER, and DROP operations on protected tables
 - **Whitelist Approach**: All tables are protected by default unless explicitly unprotected
 - **Operation Logging**: Automatic logging of all protected operations to audit file
-- **Role-Based Access**: Dedicated `table_manager_admin` role for protection management
+- **Role-Based Access**: Dedicated `warden_admin` role for protection management
 - **Easy Management**: Simple SQL functions to protect/unprotect tables
 - **Spring Boot Integration**: Web application framework for UI-based management (in development)
 
@@ -21,12 +21,31 @@ A Java web application for managing table protections through a user-friendly in
 
 ## 🛠️ Installation
 
-### Prerequisites
+### Option 1: Docker (Recommended - One-Click Setup)
+
+```bash
+docker compose up -d --build
+```
+
+This automatically:
+- Builds and installs the pg_warden extension
+- Creates a PostgreSQL database with demo data
+- Sets up pgAdmin for database management
+
+**Connection Details:**
+- PostgreSQL: `localhost:5433` (database: `licenta_db`)
+  - Admin user: `warden_admin_user` / `warden_admin_pass`
+  - Regular user: `regular_user` / `regular_user_pass`
+- pgAdmin: http://localhost:5050
+  - Email: `admin@licenta.com`
+  - Password: `admin`
+
+### Option 2: Manual Installation
+
+Prerequisites:
 - PostgreSQL 16 or later
 - GCC compiler for building the C extension
 - Java 17+ and Maven for the Spring Boot application
-
-### Installing the PostgreSQL Extension
 
 ```bash
 cd licenta-plugin
@@ -42,7 +61,7 @@ sudo make install
 
 Then in your PostgreSQL database:
 ```sql
-CREATE EXTENSION pg_log;
+CREATE EXTENSION pg_warden;
 ```
 
 ### Running the Spring Boot Application
@@ -58,16 +77,16 @@ cd licenta-aplicatie
 
 ```sql
 -- Protect a table (remove from unprotected list)
-SELECT pg_protect_table('sensitive_data');
+SELECT warden_protect('sensitive_data');
 
 -- Unprotect a table (add to unprotected list)
-SELECT pg_unprotect_table('temporary_data');
+SELECT warden_unprotect('temporary_data');
 
 -- View all logged operations
-SELECT * FROM pg_all_queries();
+SELECT * FROM warden_all_queries();
 
 -- Check protection status
-SELECT * FROM pg_unprotected_tables;
+SELECT * FROM warden_unprotected_tables;
 ```
 
 ### Example Workflow
@@ -85,20 +104,20 @@ CREATE TABLE employee_salaries (
 DELETE FROM employee_salaries; -- ERROR: Operations on protected table are not allowed
 
 -- Unprotect the table
-SELECT pg_unprotect_table('employee_salaries');
+SELECT warden_unprotect('employee_salaries');
 
 -- Now operations work
 DELETE FROM employee_salaries; -- Success
 
 -- Re-protect the table
-SELECT pg_protect_table('employee_salaries');
+SELECT warden_protect('employee_salaries');
 ```
 
 ## 🔒 Security Model
 
 - **Default Protection**: All tables are protected by default
-- **Role-Based Access**: Only users with `table_manager_admin` role can manage protections
-- **Audit Logging**: All protected operations are logged to `/tmp/pg_protected_ops.log`
+- **Role-Based Access**: Only users with `warden_admin` role can manage protections
+- **Audit Logging**: All protected operations are logged to `/tmp/pg_warden_ops.log`
 - **Whitelist Approach**: Only explicitly unprotected tables allow modifications
 
 ## 🏗️ Architecture
@@ -106,7 +125,7 @@ SELECT pg_protect_table('employee_salaries');
 ### PostgreSQL Extension
 - Uses `ProcessUtility_hook` for DDL command interception
 - Uses `post_parse_analyze_hook` for DML command interception
-- Maintains `pg_unprotected_tables` for whitelist management
+- Maintains `warden_unprotected_tables` for whitelist management
 - Logs operations to filesystem for audit trail
 
 ### Spring Boot Application (In Development)

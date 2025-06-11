@@ -1,6 +1,6 @@
-# pg_log PostgreSQL Extension
+# pg_warden PostgreSQL Extension
 
-A PostgreSQL extension for logging ALTER TABLE commands and protecting tables against DELETE and UPDATE operations.
+A PostgreSQL extension for protecting tables against modifications (DELETE, UPDATE, ALTER, and DROP operations).
 
 ## Prerequisites
 
@@ -27,7 +27,7 @@ A PostgreSQL extension for logging ALTER TABLE commands and protecting tables ag
 
 3. Create the extension in your database:
    ```sql
-   CREATE EXTENSION pg_log;
+   CREATE EXTENSION pg_warden;
    ```
 
 ## Usage
@@ -35,26 +35,27 @@ A PostgreSQL extension for logging ALTER TABLE commands and protecting tables ag
 ### Protect a table
 
 ```sql
-SELECT pg_protect_table('your_table_name');
+SELECT warden_protect('your_table_name');
 ```
 
 ### Unprotect a table
 
 ```sql
-SELECT pg_unprotect_table('your_table_name');
+SELECT warden_unprotect('your_table_name');
 ```
 
-### View logged ALTER TABLE commands
+### View logged operations
 
 ```sql
-SELECT * FROM pg_all_queries();
+SELECT * FROM warden_all_queries();
 ```
 
 ## Features
 
-- Logs all ALTER TABLE commands to `/tmp/alter_table.log`
-- Prevents DELETE and UPDATE operations on protected tables
+- Logs all protected operations to `/tmp/pg_warden_ops.log`
+- Prevents DELETE, UPDATE, ALTER TABLE, and DROP TABLE operations on protected tables
 - Provides functions to manage table protection
+- Requires `warden_admin` role to protect/unprotect tables
 
 ## License
 

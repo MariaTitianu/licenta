@@ -1,0 +1,14 @@
+html {
+    display: flex;
+    height: 100%;
+}
+
+body,
+#root,
+.App {
+    display: flex;
+    flex: 1 1 auto;
+    margin: 0;
+    /* padding: 1rem; */
+    /* float: left; */
+}

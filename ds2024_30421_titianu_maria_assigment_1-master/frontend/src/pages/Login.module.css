@@ -1,0 +1,22 @@
+.mainDiv {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.loginDiv {
+    display: flex;
+    flex-flow: column nowrap;
+    justify-content: center;
+}
+
+.errorDiv {
+    display: flex;
+    justify-content: center;
+}
+
+.buttonsDiv {
+    display: flex;
+    justify-content: space-around;
+}

@@ -1,0 +1,5 @@
+# pg_warden extension
+comment = 'PostgreSQL extension for protecting tables from modifications'
+default_version = '1.0'
+module_pathname = '$libdir/pg_warden'
+relocatable = true 
