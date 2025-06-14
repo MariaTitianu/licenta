@@ -1,0 +1,5 @@
+### Get operations summary with custom limit
+GET http://localhost:8081/api/logs/operations/summary?limit=100
+Accept: application/json
+
+###

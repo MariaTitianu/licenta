@@ -1,0 +1,25 @@
+### ==============================================
+### SCENARIO 5: Bulk Delete Prevention Testing
+### ==============================================
+
+### 5.1. Try bulk delete on protected table - should be blocked
+DELETE http://localhost:8081/api/products
+
+### Expected: 403 Forbidden - bulk delete operations are protected
+
+###
+
+### 5.2. Try bulk delete on protected payments - should be blocked
+DELETE http://localhost:8081/api/payments
+
+### Expected: 403 Forbidden
+
+###
+
+### 5.3. Check protection status to confirm tables are protected
+GET http://localhost:8081/api/protection/summary
+Accept: application/json
+
+### Expected: Both tables should be protected (not in unprotected list)
+
+###

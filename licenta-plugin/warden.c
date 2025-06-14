@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <setjmp.h>
+#include <time.h>
 
 #include "access/hash.h"
 #include "access/heapam.h"
@@ -38,6 +39,8 @@
 #include "commands/tablecmds.h"
 #include "tcop/tcopprot.h"
 #include "parser/analyze.h"
+#include "utils/timestamp.h"
+#include "utils/datetime.h"
 
 PG_MODULE_MAGIC;
 
@@ -50,8 +53,10 @@ static ProcessUtility_hook_type prev_ProcessUtility = NULL;
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
 
 
-static void write_file(const char *str);
-static bool is_alter_table_command(const char *query_string);
+static void log_operation_csv(const char *operation_type, const char *table_name, 
+                              const char *status, const char *blocked_reason, 
+                              const char *query_text);
+static char *escape_csv_field(const char *str);
 static bool is_unprotected_table(const char *table_name);
 static void intercept_dml_command(ParseState *pstate, Query *query);
 static bool is_protected_ddl_command(Node *parsetree, char **table_name);
@@ -100,28 +105,122 @@ _PG_fini(void)
     post_parse_analyze_hook = prev_post_parse_analyze_hook;
 }
 
-static void
-write_file(const char *str)
-{
-    FILE *fp = fopen("/tmp/pg_warden_ops.log", "a+");
-    if (fp == NULL)
-        elog(ERROR, "log: unable to open log file");
-    fputs(str, fp);
-    fputs("\n", fp);
-    fclose(fp);
-}
+/* Removed write_file function - now using log_operation_csv */
 
-
-static bool
-is_alter_table_command(const char *query_string)
+static char *
+escape_csv_field(const char *str)
 {
+    bool needs_quotes = false;
+    const char *p;
+    int quote_count = 0;
+    char *result;
+    char *r;
     
-    while (*query_string && isspace((unsigned char) *query_string))
-        query_string++;
-        
-
-    return pg_strncasecmp(query_string, "ALTER TABLE", 11) == 0;
+    if (str == NULL)
+        return pstrdup("");
+    
+    /* Check if escaping is needed */
+    for (p = str; *p; p++)
+    {
+        if (*p == '"' || *p == ',' || *p == '\n' || *p == '\r')
+        {
+            needs_quotes = true;
+            break;
+        }
+    }
+    
+    if (!needs_quotes)
+        return pstrdup(str);
+    
+    /* Count quotes to determine buffer size */
+    for (p = str; *p; p++)
+    {
+        if (*p == '"')
+            quote_count++;
+    }
+    
+    /* Allocate buffer: original length + quotes + escaped quotes + null terminator */
+    result = palloc(strlen(str) + quote_count + 3);
+    r = result;
+    
+    *r++ = '"';
+    for (p = str; *p; p++)
+    {
+        if (*p == '"')
+        {
+            *r++ = '"';
+            *r++ = '"';
+        }
+        else
+        {
+            *r++ = *p;
+        }
+    }
+    *r++ = '"';
+    *r = '\0';
+    
+    return result;
 }
+
+static void
+log_operation_csv(const char *operation_type, const char *table_name, 
+                  const char *status, const char *blocked_reason, 
+                  const char *query_text)
+{
+    char log_path[MAXPGPATH];
+    FILE *fp;
+    char timestamp_str[128];
+    char *escaped_query;
+    char *escaped_reason;
+    char *user_name;
+    time_t now;
+    struct tm *tm_info;
+    
+    /* Build log file path in data directory */
+    snprintf(log_path, sizeof(log_path), "%s/pg_warden_ops.csv", DataDir);
+    
+    /* Open file for appending */
+    fp = fopen(log_path, "a+");
+    if (fp == NULL)
+    {
+        elog(WARNING, "pg_warden: unable to open log file %s", log_path);
+        return;
+    }
+    
+    /* Get current timestamp in ISO format */
+    now = time(NULL);
+    tm_info = gmtime(&now);
+    strftime(timestamp_str, sizeof(timestamp_str), "%Y-%m-%dT%H:%M:%SZ", tm_info);
+    
+    /* Get user name */
+    user_name = GetUserNameFromId(GetUserId(), false);
+    
+    /* Escape CSV fields */
+    escaped_query = escape_csv_field(query_text);
+    escaped_reason = escape_csv_field(blocked_reason);
+    
+    /* Write CSV row (removed database_name field) */
+    fprintf(fp, "%s,%s,%s,%s,%d,%s,%s,%s\n",
+            timestamp_str,
+            operation_type ? operation_type : "",
+            table_name ? table_name : "",
+            user_name ? user_name : "",
+            MyProcPid,
+            status ? status : "",
+            escaped_reason,
+            escaped_query);
+    
+    fclose(fp);
+    
+    /* Clean up */
+    if (escaped_query)
+        pfree(escaped_query);
+    if (escaped_reason)
+        pfree(escaped_reason);
+}
+
+
+/* Removed is_alter_table_command - no longer needed */
 
 
 static bool
@@ -259,6 +358,10 @@ intercept_dml_command(ParseState *pstate, Query *query)
     
     if (!is_unprotected_table(table_name))
     {
+        /* Log blocked operation before throwing error */
+        log_operation_csv(operation_type, table_name, "BLOCKED", 
+                         "Table is protected", pstate->p_sourcetext);
+        
         ereport(ERROR,
             (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
              errmsg("%s operations are not allowed on table \"%s\"", 
@@ -267,9 +370,8 @@ intercept_dml_command(ParseState *pstate, Query *query)
                     table_name)));
     }
     
-    char log_message[1024];
-    snprintf(log_message, sizeof(log_message), "ALLOWED %s ON %s", operation_type, table_name);
-    write_file(log_message);
+    /* Log allowed operation */
+    log_operation_csv(operation_type, table_name, "ALLOWED", NULL, pstate->p_sourcetext);
 }
 
 static void 
@@ -293,9 +395,13 @@ process_utility(PlannedStmt *pstmt,
     {
         if (table_name)
         {
+            char *cmd_type = (nodeTag(parsetree) == T_DropStmt) ? "DROP" : "ALTER";
+            
             if (!is_unprotected_table(table_name))
             {
-                char *cmd_type = (nodeTag(parsetree) == T_DropStmt) ? "DROP" : "ALTER";
+                /* Log blocked operation before throwing error */
+                log_operation_csv(cmd_type, table_name, "BLOCKED", 
+                                 "Table is protected", queryString);
                 
                 ereport(ERROR,
                     (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -305,20 +411,14 @@ process_utility(PlannedStmt *pstmt,
                             table_name)));
             }
             
-            char log_message[1024];
-            char *cmd_type = (nodeTag(parsetree) == T_DropStmt) ? "DROP" : "ALTER";
-            snprintf(log_message, sizeof(log_message), "ALLOWED %s ON %s", cmd_type, table_name);
-            write_file(log_message);
+            /* Log allowed operation */
+            log_operation_csv(cmd_type, table_name, "ALLOWED", NULL, queryString);
             
             pfree(table_name);
         }
     }
     
-    if (queryString && is_alter_table_command(queryString))
-    {
-        write_file(queryString);
-        elog(NOTICE, "ALTER TABLE detected: %s", queryString);
-    }
+    /* No need for separate ALTER TABLE logging - already handled above */
     elog(NOTICE, "Passing command to standard processor");
     if (prev_ProcessUtility)
         prev_ProcessUtility(pstmt, queryString, readOnlyTree,
@@ -369,9 +469,8 @@ warden_protect(PG_FUNCTION_ARGS)
         ereport(NOTICE,
                (errmsg("table \"%s\" is now protected from DELETE, UPDATE, ALTER, and DROP", tablename)));
         
-        char log_message[1024];
-        snprintf(log_message, sizeof(log_message), "PROTECTED TABLE %s", tablename);
-        write_file(log_message);
+        /* Log protection action */
+        log_operation_csv("PROTECT", tablename, "SUCCESS", NULL, "WARDEN PROTECT");
     }
     else
     {
@@ -409,7 +508,7 @@ warden_unprotect(PG_FUNCTION_ARGS)
     {
         ereport(NOTICE,
                (errmsg("table \"%s\" is already unprotected", tablename)));
-        PG_RETURN_BOOL(true);
+        PG_RETURN_BOOL(false);
     }
     
     rel = table_open(get_relname_relid("warden_unprotected_tables", 
@@ -431,9 +530,8 @@ warden_unprotect(PG_FUNCTION_ARGS)
     ereport(NOTICE,
            (errmsg("table \"%s\" is now unprotected and allows DELETE, UPDATE, ALTER, and DROP", tablename)));
     
-    char log_message[1024];
-    snprintf(log_message, sizeof(log_message), "UNPROTECTED TABLE %s", tablename);
-    write_file(log_message);
+    /* Log unprotection action */
+    log_operation_csv("UNPROTECT", tablename, "SUCCESS", NULL, "WARDEN UNPROTECT");
     
     heap_freetuple(tuple);
     table_close(rel, RowExclusiveLock);
@@ -450,17 +548,16 @@ warden_all_queries(PG_FUNCTION_ARGS)
     Tuplestorestate *tupstore;
     MemoryContext   per_query_ctx;
     MemoryContext   oldcontext;
-    Datum           values[2];
-    bool            nulls[2] = {false, false};
-    char            pid[25];
-    char            query_buffer[1024];
+    Datum           values[8];  /* Now 8 columns instead of 9 */
+    bool            nulls[8];
+    char            log_path[MAXPGPATH];
+    char            line_buffer[4096];
     FILE            *fp = NULL;
-    bool            file_exists = false;
-    struct stat     stat_buf;
+    int             i;
 
-    if (stat("/tmp/pg_warden_ops.log", &stat_buf) == 0) {
-        file_exists = true;
-    }
+    /* Initialize nulls array */
+    for (i = 0; i < 8; i++)
+        nulls[i] = false;
 
     if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
         elog(ERROR, "return type must be a row type");
@@ -473,38 +570,121 @@ warden_all_queries(PG_FUNCTION_ARGS)
     rsinfo->setResult = tupstore;
     rsinfo->setDesc = tupdesc;
 
-    if (file_exists) {
-        fp = fopen("/tmp/pg_warden_ops.log", "r");
-    }
+    /* Build log file path */
+    snprintf(log_path, sizeof(log_path), "%s/pg_warden_ops.csv", DataDir);
+    
+    /* Open CSV file */
+    fp = fopen(log_path, "r");
 
-    if (fp == NULL) {
-        snprintf(query_buffer, sizeof(query_buffer), "no operations logged");
-        snprintf(pid, sizeof(pid), "invalid pid");
+    if (fp == NULL)
+    {
+        /* No log file yet - return empty result set */
+        tuplestore_donestoring(tupstore);
+        MemoryContextSwitchTo(oldcontext);
+        PG_RETURN_NULL();
+    }
+    
+    /* Read and parse each CSV line */
+    while (fgets(line_buffer, sizeof(line_buffer), fp) != NULL)
+    {
+        char *fields[8];  /* Now 8 fields */
+        char *ptr = line_buffer;
+        int field_count = 0;
+        bool in_quotes = false;
+        char *field_start = ptr;
         
-        values[0] = CStringGetTextDatum(query_buffer);
-        values[1] = CStringGetTextDatum(pid);
-        
-        tuplestore_putvalues(tupstore, tupdesc, values, nulls);
-    } else {
-        snprintf(pid, sizeof(pid), "%d", (int)getpid());
-        
-        while (fgets(query_buffer, sizeof(query_buffer) - 1, fp) != NULL) {
-            size_t len = strlen(query_buffer);
-            if (len > 0 && query_buffer[len-1] == '\n') {
-                query_buffer[len-1] = '\0';
+        /* Simple CSV parser */
+        while (*ptr && field_count < 8)
+        {
+            if (*ptr == '"')
+            {
+                in_quotes = !in_quotes;
             }
-            
-            values[0] = CStringGetTextDatum(query_buffer);
-            values[1] = CStringGetTextDatum(pid);
-            
-            tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+            else if (*ptr == ',' && !in_quotes)
+            {
+                *ptr = '\0';
+                fields[field_count++] = field_start;
+                field_start = ptr + 1;
+            }
+            else if (*ptr == '\n' && !in_quotes)
+            {
+                *ptr = '\0';
+                fields[field_count++] = field_start;
+                break;
+            }
+            ptr++;
         }
         
-        fclose(fp);
+        /* Add last field if we haven't reached 8 fields */
+        if (field_count < 8 && field_start < ptr)
+        {
+            fields[field_count++] = field_start;
+        }
+        
+        /* Skip incomplete lines */
+        if (field_count != 8)
+            continue;
+        
+        /* Remove quotes from quoted fields */
+        for (i = 0; i < 8; i++)
+        {
+            char *field = fields[i];
+            int len = strlen(field);
+            if (len >= 2 && field[0] == '"' && field[len-1] == '"')
+            {
+                char *src;
+                char *dst;
+                
+                field[len-1] = '\0';
+                fields[i] = field + 1;
+                
+                /* Unescape double quotes */
+                src = fields[i];
+                dst = fields[i];
+                while (*src)
+                {
+                    if (src[0] == '"' && src[1] == '"')
+                    {
+                        *dst++ = '"';
+                        src += 2;
+                    }
+                    else
+                    {
+                        *dst++ = *src++;
+                    }
+                }
+                *dst = '\0';
+            }
+        }
+        
+        /* Populate values array (removed database_name) */
+        values[0] = CStringGetTextDatum(fields[0]); /* timestamp */
+        values[1] = CStringGetTextDatum(fields[1]); /* operation_type */
+        values[2] = CStringGetTextDatum(fields[2]); /* table_name */
+        values[3] = CStringGetTextDatum(fields[3]); /* user_name */
+        values[4] = Int32GetDatum(atoi(fields[4])); /* session_pid */
+        values[5] = CStringGetTextDatum(fields[5]); /* status */
+        
+        /* Handle NULL blocked_reason */
+        if (strlen(fields[6]) == 0)
+        {
+            nulls[6] = true;
+        }
+        else
+        {
+            nulls[6] = false;
+            values[6] = CStringGetTextDatum(fields[6]); /* blocked_reason */
+        }
+        
+        values[7] = CStringGetTextDatum(fields[7]); /* query_text */
+        
+        tuplestore_putvalues(tupstore, tupdesc, values, nulls);
     }
-
+    
+    fclose(fp);
+    
     tuplestore_donestoring(tupstore);
     MemoryContextSwitchTo(oldcontext);
     
-    return (Datum) 0;
+    PG_RETURN_NULL();
 }

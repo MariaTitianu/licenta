@@ -29,10 +29,13 @@ else
     echo -e "${YELLOW}No running containers found${NC}"
 fi
 
-# If -v flag provided, remove only PostgreSQL volume
+# If --reset-db flag provided, remove PostgreSQL volume
 if [[ "$RESET_DB" == true ]]; then
     echo -e "${YELLOW}Removing PostgreSQL data volume...${NC}"
-    docker volume rm licenta_postgres_data 2>/dev/null
+    # Add a small delay to ensure volume is released
+    sleep 1
+    # Force remove the volume
+    docker volume rm -f licenta_postgres_data 2>/dev/null
     if [[ $? -eq 0 ]]; then
         echo -e "${GREEN}PostgreSQL data volume removed${NC}"
     else

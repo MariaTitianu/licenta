@@ -1,0 +1,37 @@
+### ==============================================
+### SCENARIO 3: Risk Demonstration
+### ==============================================
+
+### 3.1. DANGEROUS: Admin unprotects sensitive customer_payments table
+POST http://localhost:8081/api/protection/unprotect/customer_payments
+Content-Type: application/json
+
+###
+
+### 3.2. Verify customer_payments is now unprotected (dangerous state)
+GET http://localhost:8081/api/protection/status/customer_payments
+Accept: application/json
+
+### Expected: isProtected: false
+
+###
+
+### 3.3. Now DELETE works on previously protected table - DEMONSTRATING THE RISK
+DELETE http://localhost:8081/api/payments/2
+
+### Expected: 204 No Content - deletion successful (this is the risk!)
+
+###
+
+### 3.4. Quickly re-protect the sensitive table
+POST http://localhost:8081/api/protection/protect/customer_payments
+Content-Type: application/json
+
+###
+
+### 3.5. Verify protection is restored
+DELETE http://localhost:8081/api/payments/3
+
+### Expected: 403 Forbidden - protection restored
+
+###

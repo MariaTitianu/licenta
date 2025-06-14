@@ -1,0 +1,5 @@
+### Get only blocked operations with custom limit
+GET http://localhost:8081/api/logs/operations/blocked?limit=10
+Accept: application/json
+
+###

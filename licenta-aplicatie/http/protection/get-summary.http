@@ -1,0 +1,3 @@
+### Get protection summary (shows which tables are unprotected)
+GET http://localhost:8081/api/protection/summary
+Accept: application/json

@@ -1,0 +1,12 @@
+### Create a new payment
+POST http://localhost:8081/api/payments
+Content-Type: application/json
+
+{
+  "customerName": "Maria Garcia",
+  "cardLastFourDigits": "7890",
+  "cardType": "MasterCard",
+  "amount": 149.99
+}
+
+###

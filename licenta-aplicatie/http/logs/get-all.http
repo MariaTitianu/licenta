@@ -1,0 +1,4 @@
+### Get all operation logs
+GET http://localhost:8081/api/logs/operations
+
+###

@@ -1,0 +1,4 @@
+### Delete payment by ID (likely BLOCKED - customer_payments table is protected by default)
+DELETE http://localhost:8081/api/payments/5
+
+###

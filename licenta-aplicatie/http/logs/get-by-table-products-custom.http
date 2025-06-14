@@ -1,0 +1,5 @@
+### Get operations for specific table with custom limit
+GET http://localhost:8081/api/logs/operations/table/products?limit=5
+Accept: application/json
+
+###

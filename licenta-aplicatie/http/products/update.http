@@ -1,0 +1,11 @@
+### Update product by ID
+PUT http://localhost:8081/api/products/5
+Content-Type: application/json
+
+{
+  "name": "Gaming Laptop Proo",
+  "category": "Electronics",
+  "price": 1299.99,
+  "stockQuantity": 8,
+  "description": "High-performance gaming laptop with RTX graphics"
+}

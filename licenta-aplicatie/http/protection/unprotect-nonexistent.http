@@ -1,0 +1,3 @@
+### Try to unprotect a non-existent table (should handle gracefully)
+POST http://localhost:8081/api/protection/unprotect/non_existent_table
+Content-Type: application/json

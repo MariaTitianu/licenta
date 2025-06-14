@@ -1,0 +1,2 @@
+### Delete product by ID (may be blocked if products table is protected)
+DELETE http://localhost:8081/api/products/5

@@ -1,0 +1,3 @@
+### Check protection status of products table
+GET http://localhost:8081/api/protection/status/products
+Accept: application/json

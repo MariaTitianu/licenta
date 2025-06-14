@@ -1,0 +1,5 @@
+### Get operations summary (statistics)
+GET http://localhost:8081/api/logs/operations/summary
+Accept: application/json
+
+###

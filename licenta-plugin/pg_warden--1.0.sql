@@ -9,7 +9,16 @@ CREATE TABLE warden_unprotected_tables (
 
 
 CREATE FUNCTION warden_all_queries() 
-RETURNS TABLE (query TEXT, pid TEXT)
+RETURNS TABLE (
+    log_timestamp TEXT,
+    operation_type TEXT,
+    table_name TEXT,
+    user_name TEXT,
+    session_pid INTEGER,
+    status TEXT,
+    blocked_reason TEXT,
+    query_text TEXT
+)
 AS 'MODULE_PATHNAME', 'warden_all_queries'
 LANGUAGE C STRICT;
 

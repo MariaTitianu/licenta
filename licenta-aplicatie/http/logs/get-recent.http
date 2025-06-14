@@ -1,0 +1,5 @@
+### Get recent operations (default 50)
+GET http://localhost:8081/api/logs/operations/recent
+Accept: application/json
+
+###

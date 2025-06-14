@@ -1,0 +1,3 @@
+### Unprotect the products table (add to unprotected list)
+POST http://localhost:8081/api/protection/unprotect/products
+Content-Type: application/json

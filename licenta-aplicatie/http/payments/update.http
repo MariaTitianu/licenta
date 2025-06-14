@@ -1,0 +1,13 @@
+### Update payment by ID (likely BLOCKED - customer_payments table is protected by default)
+PUT http://localhost:8081/api/payments/5
+Content-Type: application/json
+
+{
+  "customerName": "John Doe Updatedd",
+  "cardLastFourDigits": "1234",
+  "cardType": "VISA",
+  "amount": 1099.99,
+  "paymentDate": "2024-12-06T15:30:00"
+}
+
+###

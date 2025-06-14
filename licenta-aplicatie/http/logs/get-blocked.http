@@ -1,0 +1,5 @@
+### Get only blocked operations
+GET http://localhost:8081/api/logs/operations/blocked
+Accept: application/json
+
+###

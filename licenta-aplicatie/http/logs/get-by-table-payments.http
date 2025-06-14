@@ -1,0 +1,5 @@
+### Get operations for specific table (customer_payments)
+GET http://localhost:8081/api/logs/operations/table/customer_payments
+Accept: application/json
+
+###

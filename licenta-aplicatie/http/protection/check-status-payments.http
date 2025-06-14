@@ -1,0 +1,3 @@
+### Check protection status of customer_payments table
+GET http://localhost:8081/api/protection/status/customer_payments
+Accept: application/json

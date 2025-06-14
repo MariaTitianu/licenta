@@ -1,0 +1,3 @@
+### DANGEROUS: Unprotect customer_payments table (for demonstration purposes only)
+POST http://localhost:8081/api/protection/unprotect/customer_payments
+Content-Type: application/json

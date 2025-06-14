@@ -1,0 +1,3 @@
+### Check status of non-existent table
+GET http://localhost:8081/api/protection/status/non_existent_table
+Accept: application/json

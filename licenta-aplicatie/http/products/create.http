@@ -1,0 +1,11 @@
+### Create a new product
+POST http://localhost:8081/api/products
+Content-Type: application/json
+
+{
+  "name": "Gaming Headset",
+  "category": "Electronics",
+  "price": 89.99,
+  "stockQuantity": 25,
+  "description": "High-quality gaming headset with noise cancellation"
+}

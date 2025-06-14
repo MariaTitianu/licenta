@@ -1,0 +1,31 @@
+### ==============================================
+### SCENARIO 4: Audit Trail Demonstration
+### ==============================================
+
+### 4.1. Check operation logs to see blocked attempts
+GET http://localhost:8081/api/logs/operations/blocked?limit=10
+Accept: application/json
+
+### Expected: List of blocked operations from previous attempts
+
+###
+
+### 4.2. Get summary of operations (blocked vs allowed)
+GET http://localhost:8081/api/logs/operations/summary?limit=50
+Accept: application/json
+
+### Expected: Statistics showing blocked and allowed operations
+
+###
+
+### 4.3. Get operations specific to products table
+GET http://localhost:8081/api/logs/operations/table/products?limit=10
+Accept: application/json
+
+###
+
+### 4.4. Get operations specific to customer_payments table
+GET http://localhost:8081/api/logs/operations/table/customer_payments?limit=10
+Accept: application/json
+
+###

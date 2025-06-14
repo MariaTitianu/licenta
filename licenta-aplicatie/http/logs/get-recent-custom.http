@@ -1,0 +1,5 @@
+### Get recent operations with custom limit
+GET http://localhost:8081/api/logs/operations?limit=20
+Accept: application/json
+
+###

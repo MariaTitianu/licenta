@@ -13,7 +13,7 @@ GRANT warden_admin TO warden_admin_user;
 
 -- Create tables
 CREATE TABLE products (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     category VARCHAR(100),
     price DECIMAL(10,2),
@@ -22,13 +22,12 @@ CREATE TABLE products (
 );
 
 CREATE TABLE customer_payments (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     customer_name VARCHAR(255) NOT NULL,
     card_last_four_digits VARCHAR(4),
     card_type VARCHAR(50),
     amount DECIMAL(10,2),
-    payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    transaction_id VARCHAR(100) UNIQUE
+    payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Grant permissions
@@ -48,11 +47,11 @@ INSERT INTO products (name, category, price, stock_quantity, description) VALUES
     ('Desk', 'Furniture', 199.99, 5, 'Adjustable standing desk');
 
 -- Insert sample data for customer payments
-INSERT INTO customer_payments (customer_name, card_last_four_digits, card_type, amount, transaction_id) VALUES
-    ('John Doe', '1234', 'VISA', 999.99, 'TXN001'),
-    ('Jane Smith', '5678', 'MasterCard', 329.98, 'TXN002'),
-    ('Bob Wilson', '9012', 'AMEX', 79.99, 'TXN003'),
-    ('Alice Brown', '3456', 'VISA', 299.99, 'TXN004');
+INSERT INTO customer_payments (customer_name, card_last_four_digits, card_type, amount) VALUES
+    ('John Doe', '1234', 'VISA', 999.99),
+    ('Jane Smith', '5678', 'MasterCard', 329.98),
+    ('Bob Wilson', '9012', 'AMEX', 79.99),
+    ('Alice Brown', '3456', 'VISA', 299.99);
 
 -- Show initial state
 \echo 'Protected tables (empty means all tables are protected):'

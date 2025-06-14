@@ -1,0 +1,3 @@
+### Protect the customer_payments table (it should already be protected by default)
+POST http://localhost:8081/api/protection/protect/customer_payments
+Content-Type: application/json

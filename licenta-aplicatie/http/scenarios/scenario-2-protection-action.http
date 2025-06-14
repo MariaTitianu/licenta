@@ -1,0 +1,64 @@
+### ==============================================
+### SCENARIO 2: Protection in Action
+### ==============================================
+
+### 2.1. Admin protects the products table
+POST http://localhost:8081/api/protection/protect/products
+Content-Type: application/json
+
+###
+
+### 2.2. Verify products table is now protected
+GET http://localhost:8081/api/protection/status/products
+Accept: application/json
+
+### Expected: isProtected: true
+
+###
+
+### 2.3. Try DELETE on now-protected products table - should be BLOCKED
+DELETE http://localhost:8081/api/products/2
+
+### Expected: 403 Forbidden with protection error
+
+###
+
+### 2.4. Try UPDATE on protected products table - should be BLOCKED
+PUT http://localhost:8081/api/products/3
+Content-Type: application/json
+
+{
+  "name": "Updated Product",
+  "category": "Electronics",
+  "price": 199.99,
+  "stockQuantity": 5,
+  "description": "This update should be blocked"
+}
+
+### Expected: 403 Forbidden with protection error
+
+###
+
+### 2.5. Try INSERT on protected table - should still work (INSERTs are not blocked by pg_warden)
+POST http://localhost:8081/api/products
+Content-Type: application/json
+
+{
+  "name": "New Product After Protection",
+  "category": "Test",
+  "price": 49.99,
+  "stockQuantity": 20,
+  "description": "INSERTs should still work"
+}
+
+### Expected: 201 Created - INSERTs are allowed
+
+###
+
+### 2.6. Try SELECT on protected table - should work (SELECTs are not blocked)
+GET http://localhost:8081/api/products
+Accept: application/json
+
+### Expected: 200 OK with products list
+
+###

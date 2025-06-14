@@ -1,0 +1,3 @@
+### Get list of unprotected tables
+GET http://localhost:8081/api/protection/unprotected
+Accept: application/json

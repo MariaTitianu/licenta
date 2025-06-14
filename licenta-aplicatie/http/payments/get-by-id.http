@@ -1,0 +1,5 @@
+### Get payment by ID
+GET http://localhost:8081/api/payments/1
+Accept: application/json
+
+###
