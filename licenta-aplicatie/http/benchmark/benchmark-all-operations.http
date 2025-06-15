@@ -1,0 +1,10 @@
+### ALL Operations Benchmark - Unprotected
+POST http://localhost:8081/api/benchmark/run
+Content-Type: application/json
+
+{
+  "operation": "all",
+  "iterations": 25,
+  "tableName": "products",
+  "protectionState": "unprotected"
+}

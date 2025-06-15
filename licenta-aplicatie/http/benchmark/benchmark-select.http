@@ -1,0 +1,10 @@
+### SELECT Benchmark - 100 iterations
+POST http://localhost:8081/api/benchmark/run
+Content-Type: application/json
+
+{
+  "operation": "select",
+  "iterations": 100,
+  "tableName": "products",
+  "protectionState": "skip"
+}

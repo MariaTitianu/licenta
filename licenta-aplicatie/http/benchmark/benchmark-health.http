@@ -1,0 +1,2 @@
+### Benchmark Health Check
+GET http://localhost:8081/api/benchmark/health

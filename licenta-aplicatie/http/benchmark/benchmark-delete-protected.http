@@ -1,0 +1,10 @@
+### DELETE Benchmark - Protected Table (should block)
+POST http://localhost:8081/api/benchmark/run
+Content-Type: application/json
+
+{
+  "operation": "delete",
+  "iterations": 10,
+  "tableName": "products",
+  "protectionState": "protected"
+}

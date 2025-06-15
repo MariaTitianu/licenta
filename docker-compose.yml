@@ -19,6 +19,112 @@ services:
       timeout: 5s
       retries: 5
 
+  # Spring Boot containers with pg_warden
+  app-jpa-warden-admin:
+    build:
+      context: ./licenta-aplicatie
+      dockerfile: Dockerfile
+    container_name: app_jpa_warden_admin
+    environment:
+      SPRING_PROFILES_ACTIVE: jpa
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/licenta_db
+      SPRING_DATASOURCE_USERNAME: warden_admin_user
+      SPRING_DATASOURCE_PASSWORD: warden_admin_pass
+      SERVER_PORT: 8081
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app-jpa-warden-user:
+    build:
+      context: ./licenta-aplicatie
+      dockerfile: Dockerfile
+    container_name: app_jpa_warden_user
+    environment:
+      SPRING_PROFILES_ACTIVE: jpa
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/licenta_db
+      SPRING_DATASOURCE_USERNAME: regular_user
+      SPRING_DATASOURCE_PASSWORD: regular_user_pass
+      SERVER_PORT: 8082
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app-jdbc-warden-admin:
+    build:
+      context: ./licenta-aplicatie
+      dockerfile: Dockerfile
+    container_name: app_jdbc_warden_admin
+    environment:
+      SPRING_PROFILES_ACTIVE: jdbc
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/licenta_db
+      SPRING_DATASOURCE_USERNAME: warden_admin_user
+      SPRING_DATASOURCE_PASSWORD: warden_admin_pass
+      SERVER_PORT: 8083
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app-jdbc-warden-user:
+    build:
+      context: ./licenta-aplicatie
+      dockerfile: Dockerfile
+    container_name: app_jdbc_warden_user
+    environment:
+      SPRING_PROFILES_ACTIVE: jdbc
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/licenta_db
+      SPRING_DATASOURCE_USERNAME: regular_user
+      SPRING_DATASOURCE_PASSWORD: regular_user_pass
+      SERVER_PORT: 8084
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Spring Boot containers without pg_warden (vanilla)
+  app-jpa-vanilla-admin:
+    build:
+      context: ./licenta-aplicatie
+      dockerfile: Dockerfile
+    container_name: app_jpa_vanilla_admin
+    environment:
+      SPRING_PROFILES_ACTIVE: jpa
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/licenta_vanilla_db
+      SPRING_DATASOURCE_USERNAME: warden_admin_user
+      SPRING_DATASOURCE_PASSWORD: warden_admin_pass
+      SERVER_PORT: 8085
+      DB_DDL_AUTO: none
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app-jdbc-vanilla-admin:
+    build:
+      context: ./licenta-aplicatie
+      dockerfile: Dockerfile
+    container_name: app_jdbc_vanilla_admin
+    environment:
+      SPRING_PROFILES_ACTIVE: jdbc
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/licenta_vanilla_db
+      SPRING_DATASOURCE_USERNAME: warden_admin_user
+      SPRING_DATASOURCE_PASSWORD: warden_admin_pass
+      SERVER_PORT: 8086
+      DB_DDL_AUTO: none
+    ports:
+      - "8086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # Optional: pgAdmin for database management
   pgadmin:
     image: dpage/pgadmin4:latest

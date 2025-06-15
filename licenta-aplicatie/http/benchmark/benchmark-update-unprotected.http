@@ -1,0 +1,10 @@
+### UPDATE Benchmark - Unprotected Table (should succeed)
+POST http://localhost:8081/api/benchmark/run
+Content-Type: application/json
+
+{
+  "operation": "update",
+  "iterations": 10,
+  "tableName": "products",
+  "protectionState": "unprotected"
+}
