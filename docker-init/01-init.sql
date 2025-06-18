@@ -6,6 +6,9 @@ CREATE DATABASE licenta_vanilla_db;
 -- Now connect to the main database and set up pg_warden
 -- Note: We're already in licenta_db because POSTGRES_DB=licenta_db
 
+-- Set session_preload_libraries for this database only
+ALTER DATABASE licenta_db SET session_preload_libraries = 'pg_warden';
+
 -- Create the extension (only in licenta_db)
 CREATE EXTENSION pg_warden;
 

@@ -26,5 +26,5 @@ COPY --from=builder /tmp/pg_warden/pg_warden--1.0.sql /usr/share/postgresql/16/e
 # Copy initialization script
 COPY docker-init/01-init.sql /docker-entrypoint-initdb.d/
 
-# Set PostgreSQL to preload the extension via command line
-CMD ["postgres", "-c", "shared_preload_libraries=pg_warden"]
+# Start PostgreSQL without global preload
+CMD ["postgres"]

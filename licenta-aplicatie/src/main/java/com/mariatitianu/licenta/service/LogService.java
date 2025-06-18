@@ -135,7 +135,8 @@ public class LogService {
                 (String) rawLog.get("table_name"),
                 (String) rawLog.get("log_timestamp"),
                 (String) rawLog.get("user_name"),
-                (String) rawLog.get("blocked_reason")
+                (String) rawLog.get("blocked_reason"),
+                (String) rawLog.get("query_text")
         );
     }
     
@@ -147,6 +148,7 @@ public class LogService {
         private final String operationTime;
         private final String userName;
         private final String blockedReason;
+        private final String queryText;
         
         public String getStatus() {
             return (blockedReason != null && !blockedReason.trim().isEmpty()) ? "BLOCKED" : "ALLOWED";

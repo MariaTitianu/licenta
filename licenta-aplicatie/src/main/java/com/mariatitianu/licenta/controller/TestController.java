@@ -19,11 +19,11 @@ public class TestController {
     
     private final DataSource dataSource;
     
-    // Vulnerable endpoint for testing SQL injection
-    @DeleteMapping("/products/by-id/{id}")
-    public Map<String, Object> deleteProductById(@PathVariable String id) {
+    // Vulnerable endpoint for testing SQL injection on payments
+    @DeleteMapping("/payments/by-id/{id}")
+    public Map<String, Object> deletePaymentById(@PathVariable String id) {
         // VULNERABLE: Direct string concatenation without validation
-        String sql = "DELETE FROM products WHERE id = " + id;
+        String sql = "DELETE FROM customer_payments WHERE id = " + id;
         
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
@@ -45,10 +45,10 @@ public class TestController {
     }
     
     // Another vulnerable endpoint with string parameter
-    @DeleteMapping("/products/by-category/{category}")
-    public Map<String, Object> deleteProductsByCategory(@PathVariable String category) {
+    @DeleteMapping("/payments/by-customer/{customer}")
+    public Map<String, Object> deletePaymentsByCustomer(@PathVariable String customer) {
         // VULNERABLE: Direct string concatenation
-        String sql = "DELETE FROM products WHERE category = '" + category + "'";
+        String sql = "DELETE FROM customer_payments WHERE customer_name = '" + customer + "'";
         
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {

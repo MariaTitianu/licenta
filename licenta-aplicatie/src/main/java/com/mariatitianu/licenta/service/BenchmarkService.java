@@ -3,6 +3,8 @@ package com.mariatitianu.licenta.service;
 import com.mariatitianu.licenta.dto.BenchmarkRequest;
 import com.mariatitianu.licenta.dto.BenchmarkResult;
 import com.mariatitianu.licenta.dto.BenchmarkResult.OperationResult;
+import com.mariatitianu.licenta.dto.MultiBenchmarkRequest;
+import com.mariatitianu.licenta.dto.MultiBenchmarkResult;
 import com.mariatitianu.licenta.entity.Product;
 import com.mariatitianu.licenta.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -282,6 +284,71 @@ public class BenchmarkService {
         result.setBlockedCount(blockedCount);
         result.setErrorCount(errorCount);
         result.setAverageTimePerOperation(iterations > 0 ? (double) executionTime / iterations : 0);
+        
+        return result;
+    }
+    
+    public MultiBenchmarkResult runMultiBenchmark(MultiBenchmarkRequest request) {
+        MultiBenchmarkResult result = new MultiBenchmarkResult();
+        result.setTotalIterations(request.getIterations());
+        
+        Map<String, MultiBenchmarkResult.OperationResult> operationResults = new HashMap<>();
+        long totalStartTime = System.currentTimeMillis();
+        
+        // Ensure tables are unprotected for benchmarking on pg_warden backends
+        try {
+            protectionService.unprotectTable("products");
+            protectionService.unprotectTable("customer_payments");
+        } catch (Exception e) {
+            log.warn("Could not unprotect tables - might be vanilla PostgreSQL: {}", e.getMessage());
+        }
+        
+        for (String operation : request.getOperations()) {
+            MultiBenchmarkResult.OperationResult opResult = new MultiBenchmarkResult.OperationResult();
+            opResult.setIterations(request.getIterations());
+            
+            try {
+                // Run the benchmark for this operation
+                OperationResult benchmarkResult = null;
+                switch (operation.toUpperCase()) {
+                    case "SELECT":
+                        benchmarkResult = benchmarkSelect(request.getIterations());
+                        break;
+                    case "INSERT":
+                        benchmarkResult = benchmarkInsert(request.getIterations());
+                        break;
+                    case "UPDATE":
+                        benchmarkResult = benchmarkUpdate(request.getIterations());
+                        break;
+                    case "DELETE":
+                        benchmarkResult = benchmarkDelete(request.getIterations());
+                        break;
+                    default:
+                        opResult.setError("Unknown operation: " + operation);
+                        operationResults.put(operation, opResult);
+                        continue;
+                }
+                
+                if (benchmarkResult != null) {
+                    opResult.setTotalTimeMs(benchmarkResult.getExecutionTime());
+                    opResult.setAvgTimeMs(benchmarkResult.getAverageTimePerOperation());
+                    if (benchmarkResult.getExecutionTime() > 0) {
+                        opResult.setOpsPerSecond((double) request.getIterations() * 1000 / benchmarkResult.getExecutionTime());
+                    }
+                    if (benchmarkResult.getError() != null) {
+                        opResult.setError(benchmarkResult.getError());
+                    }
+                }
+            } catch (Exception e) {
+                opResult.setError("Failed to run " + operation + ": " + e.getMessage());
+                log.error("Benchmark failed for operation: " + operation, e);
+            }
+            
+            operationResults.put(operation, opResult);
+        }
+        
+        result.setTotalTimeMs(System.currentTimeMillis() - totalStartTime);
+        result.setOperationResults(operationResults);
         
         return result;
     }
