@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { FormControl, InputLabel, Select, MenuItem, ToggleButton, ToggleButtonGroup, Box, Typography } from '@mui/material';
 import { AdminPanelSettings, Person } from '@mui/icons-material';
+import { useTheme } from '../context/ThemeContext';
 
 const BackendSelectorWithToggle = ({ value, onChange }) => {
+  const { colors } = useTheme();
+  
   // Determine initial user type based on current port
   const getInitialUserType = () => {
     return [8081, 8083, 8085, 8086].includes(value) ? 'admin' : 'user';
@@ -54,7 +57,17 @@ const BackendSelectorWithToggle = ({ value, onChange }) => {
 
   return (
     <Box>
-      <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+      <FormControl fullWidth size="small" sx={{ 
+        mb: 2,
+        '& .MuiInputLabel-root': { color: colors.textSecondary },
+        '& .MuiOutlinedInput-root': { 
+          color: colors.text,
+          '& fieldset': { borderColor: colors.border },
+          '&:hover fieldset': { borderColor: colors.accent },
+          '&.Mui-focused fieldset': { borderColor: colors.accent },
+        },
+        '& .MuiSvgIcon-root': { color: colors.textSecondary }
+      }}>
         <InputLabel id="backend-selector-label">Backend</InputLabel>
         <Select
           labelId="backend-selector-label"
@@ -72,7 +85,7 @@ const BackendSelectorWithToggle = ({ value, onChange }) => {
 
       {supportsUserAdmin && (
         <Box sx={{ mb: 2 }}>
-          <Typography variant="caption" color="textSecondary" sx={{ mb: 1, display: 'block' }}>
+          <Typography variant="caption" sx={{ mb: 1, display: 'block', color: colors.textSecondary }}>
             User Role
           </Typography>
           <ToggleButtonGroup
@@ -84,7 +97,19 @@ const BackendSelectorWithToggle = ({ value, onChange }) => {
             sx={{
               '& .MuiToggleButton-root': {
                 textTransform: 'none',
-                gap: 1
+                gap: 1,
+                color: colors.text,
+                borderColor: colors.border,
+                '&.Mui-selected': {
+                  backgroundColor: colors.accent,
+                  color: '#fff',
+                  '&:hover': {
+                    backgroundColor: colors.accentHover,
+                  }
+                },
+                '&:hover': {
+                  backgroundColor: colors.surfaceHover,
+                }
               }
             }}
           >
@@ -100,7 +125,7 @@ const BackendSelectorWithToggle = ({ value, onChange }) => {
         </Box>
       )}
 
-      <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
+      <Typography variant="caption" sx={{ display: 'block', mt: 1, color: colors.textSecondary }}>
         Port: :{value}
       </Typography>
     </Box>

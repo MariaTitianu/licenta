@@ -24,4 +24,8 @@ public interface ProductRepository {
     List<Product> findByNameContainingIgnoreCase(String name);
     
     List<Product> findByStockQuantityGreaterThan(Integer quantity);
+    
+    Long findMinId();
+    
+    Long findMaxId();
 }

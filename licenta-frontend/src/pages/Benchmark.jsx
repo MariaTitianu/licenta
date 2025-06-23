@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { Typography, Button, Divider, TextField, FormControlLabel, Checkbox, Paper } from '@mui/material';
+import { Typography, Button, Divider, TextField, FormControlLabel, Checkbox, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { toast } from 'react-toastify';
-import Ribbon from '../components/Ribbon';
 import BackendSelectorWithToggle from '../components/BackendSelectorWithToggle';
 import API from '../api';
+import { useTheme } from '../context/ThemeContext';
 
 const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
+  const { colors } = useTheme();
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
-  const [iterations, setIterations] = useState(100);
+  const [iterations, setIterations] = useState(1000);
   const [selectedOperations, setSelectedOperations] = useState({
     SELECT: true,
     INSERT: true,
@@ -18,6 +19,24 @@ const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
   });
   const [compareWithVanilla, setCompareWithVanilla] = useState(true);
   const [vanillaResults, setVanillaResults] = useState(null);
+
+  // Helper function to format time values with appropriate precision
+  const formatTime = (timeMs) => {
+    if (timeMs === undefined || timeMs === null) return '-';
+    
+    // If less than 0.01ms, show in microseconds
+    if (timeMs < 0.01) {
+      return `${(timeMs * 1000).toFixed(2)}μs`;
+    }
+    // If less than 1ms, show 4 decimal places
+    else if (timeMs < 1) {
+      return `${timeMs.toFixed(4)}ms`;
+    }
+    // Otherwise show 2 decimal places
+    else {
+      return `${timeMs.toFixed(2)}ms`;
+    }
+  };
 
   const handleOperationToggle = (operation) => {
     setSelectedOperations(prev => ({
@@ -68,6 +87,9 @@ const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
       // Run benchmark on current backend
       const result = await runBenchmark(selectedBackend);
       if (result) {
+        console.log('Benchmark result:', result);
+        console.log('Operation results:', result.operationResults);
+        console.log('First operation:', Object.keys(result.operationResults)[0], result.operationResults[Object.keys(result.operationResults)[0]]);
         setResults(result);
         toast.success('Benchmark completed successfully');
       }
@@ -95,13 +117,16 @@ const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
   const prepareChartData = () => {
     if (!results) return { xAxis: [], series: [] };
 
-    const operations = Object.keys(results.operationResults);
+    // Define the order of operations
+    const operationOrder = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
+    const operations = operationOrder.filter(op => results.operationResults[op]);
+    
     const pgWardenData = operations.map(op => results.operationResults[op].avgTimeMs);
     
     const series = [{
       data: pgWardenData,
       label: 'pg_warden',
-      color: '#1976d2'
+      color: colors.accent
     }];
 
     if (vanillaResults) {
@@ -109,7 +134,7 @@ const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
       series.push({
         data: vanillaData,
         label: 'Vanilla PostgreSQL',
-        color: '#388e3c'
+        color: colors.success
       });
     }
 
@@ -133,20 +158,23 @@ const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
 
   return (
     <div className="page-container">
-      <Ribbon />
       <div className="page-content">
         <div className="sidebar">
           <BackendSelectorWithToggle value={selectedBackend} onChange={setSelectedBackend} />
           
-          <Typography variant="h5" gutterBottom>
+          <Typography variant="h5" gutterBottom style={{ color: colors.text }}>
             Performance Benchmark
           </Typography>
 
-          <Typography variant="body2" color="textSecondary" gutterBottom>
+          <Typography variant="body2" gutterBottom style={{ color: colors.textSecondary }}>
             Current: {getBackendName()}
           </Typography>
+          
+          <Typography variant="body2" gutterBottom style={{ color: colors.textSecondary }}>
+            Target table: products
+          </Typography>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider sx={{ my: 2, borderColor: colors.border }} />
 
           <div className="form-fields">
             <TextField
@@ -156,10 +184,19 @@ const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
               value={iterations}
               onChange={(e) => setIterations(e.target.value)}
               InputLabelProps={{ shrink: true }}
-              inputProps={{ min: 1, max: 1000 }}
+              inputProps={{ min: 1, max: 10000 }}
+              sx={{
+                '& .MuiInputLabel-root': { color: colors.textSecondary },
+                '& .MuiOutlinedInput-root': { 
+                  color: colors.text,
+                  '& fieldset': { borderColor: colors.border },
+                  '&:hover fieldset': { borderColor: colors.accent },
+                  '&.Mui-focused fieldset': { borderColor: colors.accent },
+                },
+              }}
             />
 
-            <Typography variant="body2" sx={{ mt: 2 }}>
+            <Typography variant="body2" sx={{ mt: 2, color: colors.text }}>
               Operations to test:
             </Typography>
 
@@ -204,14 +241,23 @@ const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
         </div>
 
         <div className="main-area">
-          <Typography variant="h5" gutterBottom>
+          <Typography variant="h5" gutterBottom style={{ color: colors.text }}>
             Benchmark Results
           </Typography>
 
           {results && (
             <>
-              <Paper sx={{ p: 3, mt: 2 }}>
-                <Typography variant="h6" gutterBottom>
+              <Paper sx={{ p: 1.5, mt: 1, backgroundColor: colors.card, color: colors.text }}>
+                <Typography variant="body2" style={{ color: colors.text }}>
+                  <strong>Benchmark Configuration:</strong> {results.totalIterations} iterations per operation on the "products" table
+                </Typography>
+                <Typography variant="body2" style={{ color: colors.text }}>
+                  <strong>Operations tested:</strong> {Object.keys(results.operationResults).join(', ')}
+                </Typography>
+              </Paper>
+
+              <Paper sx={{ p: 2, mt: 1.5, backgroundColor: colors.card }}>
+                <Typography variant="h6" gutterBottom style={{ color: colors.text }}>
                   Average Execution Time (ms)
                 </Typography>
                 
@@ -219,63 +265,154 @@ const Benchmark = ({ selectedBackend, setSelectedBackend }) => {
                   {...prepareChartData()}
                   height={400}
                   margin={{ left: 50 }}
+                  sx={{
+                    '& .MuiChartsAxis-line': { stroke: colors.border },
+                    '& .MuiChartsAxis-tick': { stroke: colors.border },
+                    '& .MuiChartsAxis-tickLabel': { fill: colors.textSecondary },
+                    '& .MuiChartsLegend-label': { fill: colors.text },
+                  }}
                 />
               </Paper>
 
-              <Paper sx={{ p: 3, mt: 3 }}>
-                <Typography variant="h6" gutterBottom>
+              {results.operationResults && Object.keys(results.operationResults).length > 0 && 
+               results.operationResults[Object.keys(results.operationResults)[0]].p50TimeMs !== undefined && (
+                <Paper sx={{ p: 2, mt: 1.5, backgroundColor: colors.card }}>
+                  <Typography variant="h6" gutterBottom style={{ color: colors.text }}>
+                    Response Time Percentiles (ms)
+                  </Typography>
+                  
+                  <BarChart
+                    xAxis={[{ 
+                      scaleType: 'band', 
+                      data: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'].filter(op => results.operationResults[op])
+                    }]}
+                    series={[
+                      { 
+                        data: ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+                          .filter(op => results.operationResults[op])
+                          .map(op => results.operationResults[op].p50TimeMs), 
+                        label: 'p50 (Median)',
+                        color: colors.success
+                      },
+                      { 
+                        data: ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+                          .filter(op => results.operationResults[op])
+                          .map(op => results.operationResults[op].p95TimeMs), 
+                        label: 'p95',
+                        color: colors.warning
+                      },
+                      { 
+                        data: ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+                          .filter(op => results.operationResults[op])
+                          .map(op => results.operationResults[op].p99TimeMs), 
+                        label: 'p99',
+                        color: colors.error
+                      }
+                    ]}
+                    height={300}
+                    margin={{ left: 50 }}
+                    sx={{
+                      '& .MuiChartsAxis-line': { stroke: colors.border },
+                      '& .MuiChartsAxis-tick': { stroke: colors.border },
+                      '& .MuiChartsAxis-tickLabel': { fill: colors.textSecondary },
+                      '& .MuiChartsLegend-label': { fill: colors.text },
+                    }}
+                  />
+                </Paper>
+              )}
+
+              <Paper sx={{ p: 2, mt: 1.5, backgroundColor: colors.card }}>
+                <Typography variant="h6" gutterBottom style={{ color: colors.text }}>
                   Detailed Results
                 </Typography>
                 
-                {Object.entries(results.operationResults).map(([op, data]) => (
-                  <div key={op} style={{ marginBottom: '20px' }}>
-                    <Typography variant="subtitle1" fontWeight="bold">
-                      {op}
-                    </Typography>
-                    <Typography variant="body2">
-                      Total time: {data.totalTimeMs.toFixed(2)}ms
-                    </Typography>
-                    <Typography variant="body2">
-                      Average time: {data.avgTimeMs.toFixed(2)}ms
-                    </Typography>
-                    <Typography variant="body2">
-                      Success: {data.successCount} / Blocked: {data.blockedCount}
-                    </Typography>
-                  </div>
-                ))}
+                <TableContainer>
+                  <Table size="small" sx={{
+                    '& .MuiTableCell-root': {
+                      color: colors.text,
+                      borderBottom: `1px solid ${colors.border}`,
+                    },
+                    '& .MuiTableCell-head': {
+                      backgroundColor: colors.surface,
+                      fontWeight: 600,
+                    },
+                  }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Operation{vanillaResults ? ' (pg_warden)' : ''}</strong></TableCell>
+                        <TableCell align="right"><strong>Total Time (ms)</strong></TableCell>
+                        <TableCell align="right"><strong>Avg Time (ms)</strong></TableCell>
+                        <TableCell align="right"><strong>Ops/Second</strong></TableCell>
+                        <TableCell align="right"><strong>P50 (ms)</strong></TableCell>
+                        <TableCell align="right"><strong>P95 (ms)</strong></TableCell>
+                        <TableCell align="right"><strong>P99 (ms)</strong></TableCell>
+                        <TableCell align="right"><strong>Success</strong></TableCell>
+                        <TableCell align="right"><strong>Blocked</strong></TableCell>
+                        <TableCell align="right"><strong>Errors</strong></TableCell>
+                        {vanillaResults && (
+                          <TableCell align="right"><strong>Overhead vs Vanilla</strong></TableCell>
+                        )}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+                        .filter(op => results.operationResults[op])
+                        .map((op) => {
+                          const data = results.operationResults[op];
+                          let overhead = null;
+                          if (vanillaResults && vanillaResults.operationResults[op]) {
+                            const vanillaTime = vanillaResults.operationResults[op].avgTimeMs;
+                            const pgWardenTime = data.avgTimeMs;
+                            overhead = ((pgWardenTime - vanillaTime) / vanillaTime * 100).toFixed(1);
+                          }
+                          return (
+                            <TableRow key={op}>
+                              <TableCell component="th" scope="row">
+                                <strong>{op}</strong>
+                              </TableCell>
+                              <TableCell align="right">{formatTime(data.totalTimeMs)}</TableCell>
+                              <TableCell align="right">{formatTime(data.avgTimeMs)}</TableCell>
+                              <TableCell align="right">{data.opsPerSecond ? data.opsPerSecond.toFixed(0) : '-'}</TableCell>
+                              <TableCell align="right">{formatTime(data.p50TimeMs)}</TableCell>
+                              <TableCell align="right">{formatTime(data.p95TimeMs)}</TableCell>
+                              <TableCell align="right">{formatTime(data.p99TimeMs)}</TableCell>
+                              <TableCell align="right" sx={{ color: 'success.main' }}>
+                                {data.successCount || 0}
+                              </TableCell>
+                              <TableCell align="right" sx={{ color: data.blockedCount > 0 ? 'warning.main' : 'inherit' }}>
+                                {data.blockedCount || 0}
+                              </TableCell>
+                              <TableCell align="right" sx={{ color: data.errorCount > 0 ? 'error.main' : 'inherit' }}>
+                                {data.errorCount || 0}
+                              </TableCell>
+                              {vanillaResults && (
+                                <TableCell align="right" sx={{ 
+                                  color: overhead && parseFloat(overhead) > 0 ? 'warning.main' : 'success.main',
+                                  fontWeight: 'medium'
+                                }}>
+                                  {overhead !== null ? `${overhead > 0 ? '+' : ''}${overhead}%` : '-'}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          );
+                        })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
 
-                <Divider sx={{ my: 2 }} />
+                <Divider sx={{ my: 1, borderColor: colors.border }} />
                 
-                <Typography variant="body2" color="textSecondary">
-                  Total benchmark time: {results.totalTimeMs.toFixed(2)}ms
+                <Typography variant="body2" style={{ color: colors.textSecondary }}>
+                  Total benchmark time: {formatTime(results.totalTimeMs)}
                 </Typography>
               </Paper>
 
-              {vanillaResults && (
-                <Paper sx={{ p: 3, mt: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Performance Impact
-                  </Typography>
-                  
-                  {Object.entries(results.operationResults).map(([op, data]) => {
-                    const vanillaTime = vanillaResults.operationResults[op].avgTimeMs;
-                    const pgWardenTime = data.avgTimeMs;
-                    const overhead = ((pgWardenTime - vanillaTime) / vanillaTime * 100).toFixed(1);
-                    
-                    return (
-                      <Typography key={op} variant="body2" sx={{ mb: 1 }}>
-                        {op}: {overhead > 0 ? '+' : ''}{overhead}% overhead
-                      </Typography>
-                    );
-                  })}
-                </Paper>
-              )}
             </>
           )}
 
           {!results && !loading && (
-            <Paper sx={{ p: 3, mt: 2 }}>
-              <Typography color="textSecondary">
+            <Paper sx={{ p: 2, mt: 1.5, backgroundColor: colors.card }}>
+              <Typography style={{ color: colors.textSecondary }}>
                 Configure benchmark settings and click "Run Benchmark" to start performance testing.
               </Typography>
             </Paper>

@@ -125,6 +125,24 @@ services:
       postgres:
         condition: service_healthy
 
+  # Frontend service
+  frontend:
+    build:
+      context: ./licenta-frontend
+      dockerfile: Dockerfile
+    container_name: licenta_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - app-jpa-warden-admin
+      - app-jpa-warden-user
+      - app-jdbc-warden-admin
+      - app-jdbc-warden-user
+      - app-jpa-vanilla-admin
+      - app-jdbc-vanilla-admin
+    environment:
+      - NODE_ENV=production
+
   # Optional: pgAdmin for database management
   pgadmin:
     image: dpage/pgadmin4:latest

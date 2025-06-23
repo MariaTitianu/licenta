@@ -1,9 +1,15 @@
 const API = {
   baseUrl: 'http://localhost:8081',
+  currentPort: 8081,
 
   async fetch(endpoint, options = {}) {
     try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      // Use relative URL when running in production (Docker)
+      const baseUrl = window.location.hostname === 'localhost' && window.location.port
+        ? this.baseUrl
+        : `/backend-${this.currentPort}`;
+        
+      const response = await fetch(`${baseUrl}${endpoint}`, {
         headers: { 'Content-Type': 'application/json' },
         ...options,
       });
@@ -25,6 +31,7 @@ const API = {
   },
 
   setBackend(port) {
+    this.currentPort = port;
     this.baseUrl = `http://localhost:${port}`;
   },
 
@@ -67,7 +74,6 @@ const API = {
   // Benchmark API
   benchmark: {
     run: (request) => API.fetch('/api/benchmark/run', { method: 'POST', body: JSON.stringify(request) }),
-    runSingle: (operation, request) => API.fetch(`/api/benchmark/${operation}`, { method: 'POST', body: JSON.stringify(request) }),
   },
 
   // Test API (vulnerable endpoints for SQL injection demo)

@@ -1,8 +1,5 @@
 package com.mariatitianu.licenta.service;
 
-import com.mariatitianu.licenta.dto.BenchmarkRequest;
-import com.mariatitianu.licenta.dto.BenchmarkResult;
-import com.mariatitianu.licenta.dto.BenchmarkResult.OperationResult;
 import com.mariatitianu.licenta.dto.MultiBenchmarkRequest;
 import com.mariatitianu.licenta.dto.MultiBenchmarkResult;
 import com.mariatitianu.licenta.entity.Product;
@@ -24,84 +21,126 @@ public class BenchmarkService {
     private final ProductRepository productRepository;
     private final ProtectionService protectionService;
     
-    public BenchmarkResult runBenchmark(BenchmarkRequest request) {
-        BenchmarkResult result = new BenchmarkResult();
-        result.setIterations(request.getIterations());
-        result.setTableName(request.getTableName());
-        result.setProtectionState(request.getProtectionState());
+    // Warm-up iterations to stabilize JVM performance
+    private static final int WARMUP_ITERATIONS = 100;
+    
+    public MultiBenchmarkResult runMultiBenchmark(MultiBenchmarkRequest request) {
+        MultiBenchmarkResult result = new MultiBenchmarkResult();
+        result.setTotalIterations(request.getIterations());
         
-        // Set protection state if requested
-        if (!"skip".equals(request.getProtectionState())) {
+        Map<String, MultiBenchmarkResult.OperationResult> operationResults = new HashMap<>();
+        long totalStartTime = System.nanoTime();
+        
+        // Only unprotect products table if UPDATE or DELETE operations are included
+        boolean needsUnprotection = request.getOperations().stream()
+            .anyMatch(op -> op.equalsIgnoreCase("UPDATE") || op.equalsIgnoreCase("DELETE"));
+        
+        boolean wasProtected = false;
+        if (needsUnprotection) {
             try {
-                if ("protected".equals(request.getProtectionState())) {
-                    protectionService.protectTable(request.getTableName());
-                } else {
-                    protectionService.unprotectTable(request.getTableName());
+                // Check if table was protected before unprotecting
+                wasProtected = protectionService.isTableProtected("products");
+                if (wasProtected) {
+                    protectionService.unprotectTable("products");
+                    log.info("Temporarily unprotected products table for UPDATE/DELETE benchmarks");
                 }
-                result.setProtectionState(request.getProtectionState());
             } catch (Exception e) {
-                log.error("Failed to set protection state", e);
+                log.warn("Could not check/unprotect products table - might be vanilla PostgreSQL: {}", e.getMessage());
             }
         }
         
-        long totalStartTime = System.currentTimeMillis();
-        
-        // Run requested operations
-        switch (request.getOperation().toLowerCase()) {
-            case "select":
-                result.getOperations().put("select", benchmarkSelect(request.getIterations()));
-                break;
-            case "insert":
-                result.getOperations().put("insert", benchmarkInsert(request.getIterations()));
-                break;
-            case "update":
-                result.getOperations().put("update", benchmarkUpdate(request.getIterations()));
-                break;
-            case "delete":
-                result.getOperations().put("delete", benchmarkDelete(request.getIterations()));
-                break;
-            case "all":
-                result.getOperations().put("select", benchmarkSelect(request.getIterations()));
-                result.getOperations().put("insert", benchmarkInsert(request.getIterations()));
-                result.getOperations().put("update", benchmarkUpdate(request.getIterations()));
-                result.getOperations().put("delete", benchmarkDelete(request.getIterations()));
-                break;
-            default:
-                throw new IllegalArgumentException("Invalid operation: " + request.getOperation());
+        for (String operation : request.getOperations()) {
+            MultiBenchmarkResult.OperationResult opResult = null;
+            
+            try {
+                switch (operation.toUpperCase()) {
+                    case "SELECT":
+                        opResult = benchmarkSelect(request.getIterations());
+                        break;
+                    case "INSERT":
+                        opResult = benchmarkInsert(request.getIterations());
+                        break;
+                    case "UPDATE":
+                        opResult = benchmarkUpdate(request.getIterations());
+                        break;
+                    case "DELETE":
+                        opResult = benchmarkDelete(request.getIterations());
+                        break;
+                    default:
+                        opResult = new MultiBenchmarkResult.OperationResult();
+                        opResult.setError("Unknown operation: " + operation);
+                }
+            } catch (Exception e) {
+                opResult = new MultiBenchmarkResult.OperationResult();
+                opResult.setError("Failed to run " + operation + ": " + e.getMessage());
+                log.error("Benchmark failed for operation: " + operation, e);
+            }
+            
+            if (opResult != null) {
+                operationResults.put(operation, opResult);
+            }
         }
         
-        result.setTotalTime(System.currentTimeMillis() - totalStartTime);
+        result.setTotalTimeMs((double)(System.nanoTime() - totalStartTime) / 1_000_000.0);
+        result.setOperationResults(operationResults);
+        
+        // Restore protection status if we unprotected the table
+        if (needsUnprotection && wasProtected) {
+            try {
+                protectionService.protectTable("products");
+                log.info("Restored protection on products table after benchmarking");
+            } catch (Exception e) {
+                log.warn("Could not restore protection on products table: {}", e.getMessage());
+            }
+        }
+        
         return result;
     }
     
-    private OperationResult benchmarkSelect(int iterations) {
-        OperationResult result = new OperationResult();
-        result.setOperation("select");
+    private MultiBenchmarkResult.OperationResult benchmarkSelect(int iterations) {
+        MultiBenchmarkResult.OperationResult result = new MultiBenchmarkResult.OperationResult();
+        result.setIterations(iterations);
         
-        // Get existing product IDs
-        List<Product> allProducts = productRepository.findAll();
-        if (allProducts.isEmpty()) {
+        // Get min and max product IDs for range
+        Long minId = productRepository.findMinId();
+        Long maxId = productRepository.findMaxId();
+        
+        if (minId == null || maxId == null) {
             result.setError("No products found for SELECT benchmark");
             return result;
         }
         
-        List<Long> productIds = allProducts.stream()
-            .map(Product::getId)
-            .toList();
-        
-        long startTime = System.currentTimeMillis();
+        List<Long> timings = new ArrayList<>();
         int successCount = 0;
         int errorCount = 0;
         
+        // Warm-up phase
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            try {
+                Long randomId = ThreadLocalRandom.current().nextLong(minId, maxId + 1);
+                productRepository.findById(randomId);
+            } catch (Exception e) {
+                // Ignore warmup errors
+            }
+        }
+        
+        // Actual benchmark
+        long totalTimeNanos = 0;
         for (int i = 0; i < iterations; i++) {
             try {
-                // Select a random product
-                Long randomId = productIds.get(ThreadLocalRandom.current().nextInt(productIds.size()));
+                Long randomId = ThreadLocalRandom.current().nextLong(minId, maxId + 1);
+                
+                long opStart = System.nanoTime();
                 Optional<Product> product = productRepository.findById(randomId);
+                long opEnd = System.nanoTime();
+                
+                timings.add(opEnd - opStart);
+                
                 if (product.isPresent()) {
                     successCount++;
                 } else {
-                    errorCount++;
+                    // ID might not exist in range, this is expected
+                    successCount++;
                 }
             } catch (Exception e) {
                 errorCount++;
@@ -109,35 +148,81 @@ public class BenchmarkService {
             }
         }
         
-        long executionTime = System.currentTimeMillis() - startTime;
-        result.setExecutionTime(executionTime);
+        // Calculate total time from timings
+        totalTimeNanos = timings.stream().mapToLong(Long::longValue).sum();
+        
+        result.setTotalTimeMs((double) totalTimeNanos / 1_000_000.0);
         result.setSuccessCount(successCount);
         result.setErrorCount(errorCount);
-        result.setAverageTimePerOperation(iterations > 0 ? (double) executionTime / iterations : 0);
+        result.setBlockedCount(0); // SELECT operations are never blocked
+        
+        if (!timings.isEmpty()) {
+            result.setAvgTimeMs((double) totalTimeNanos / timings.size() / 1_000_000.0);
+            result.setOpsPerSecond(timings.size() * 1_000_000_000.0 / totalTimeNanos);
+            
+            // Calculate percentiles
+            Collections.sort(timings);
+            result.setP50TimeMs(calculatePercentile(timings, 50));
+            result.setP95TimeMs(calculatePercentile(timings, 95));
+            result.setP99TimeMs(calculatePercentile(timings, 99));
+        }
         
         return result;
     }
     
     @Transactional
-    private OperationResult benchmarkInsert(int iterations) {
-        OperationResult result = new OperationResult();
-        result.setOperation("insert");
+    private MultiBenchmarkResult.OperationResult benchmarkInsert(int iterations) {
+        MultiBenchmarkResult.OperationResult result = new MultiBenchmarkResult.OperationResult();
+        result.setIterations(iterations);
         
-        long startTime = System.currentTimeMillis();
+        List<Long> timings = new ArrayList<>();
+        List<Long> createdIds = new ArrayList<>();
         int successCount = 0;
         int errorCount = 0;
-        List<Long> createdIds = new ArrayList<>();
         
+        // Warm-up phase
+        List<Long> warmupIds = new ArrayList<>();
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            try {
+                Product product = new Product();
+                product.setName("Warmup Product " + System.nanoTime());
+                product.setCategory("Warmup");
+                product.setPrice(new BigDecimal("1.00"));
+                product.setStockQuantity(1);
+                product.setDescription("Warmup");
+                
+                Product saved = productRepository.save(product);
+                warmupIds.add(saved.getId());
+            } catch (Exception e) {
+                // Ignore warmup errors
+            }
+        }
+        
+        // Clean up warmup products
+        for (Long id : warmupIds) {
+            try {
+                productRepository.deleteById(id);
+            } catch (Exception e) {
+                // Ignore cleanup errors
+            }
+        }
+        
+        // Actual benchmark
+        long totalTimeNanos = 0;
         for (int i = 0; i < iterations; i++) {
             try {
                 Product product = new Product();
-                product.setName("Benchmark Product " + System.currentTimeMillis() + "_" + i);
+                product.setName("Benchmark Product " + System.nanoTime() + "_" + i);
                 product.setCategory("Benchmark");
                 product.setPrice(new BigDecimal("99.99"));
                 product.setStockQuantity(100);
                 product.setDescription("Benchmark test product");
                 
+                long opStart = System.nanoTime();
                 Product saved = productRepository.save(product);
+                long opEnd = System.nanoTime();
+                
+                timings.add(opEnd - opStart);
                 createdIds.add(saved.getId());
                 successCount++;
             } catch (Exception e) {
@@ -146,51 +231,88 @@ public class BenchmarkService {
             }
         }
         
-        // Clean up created products
+        // Calculate total time from timings
+        totalTimeNanos = timings.stream().mapToLong(Long::longValue).sum();
+        
+        // Clean up created products (outside of benchmark timing)
         for (Long id : createdIds) {
             try {
                 productRepository.deleteById(id);
             } catch (Exception e) {
-                // Ignore cleanup errors
+                log.debug("Failed to cleanup product {}: {}", id, e.getMessage());
             }
         }
         
-        long executionTime = System.currentTimeMillis() - startTime;
-        result.setExecutionTime(executionTime);
+        result.setTotalTimeMs((double) totalTimeNanos / 1_000_000.0);
         result.setSuccessCount(successCount);
         result.setErrorCount(errorCount);
-        result.setAverageTimePerOperation(iterations > 0 ? (double) executionTime / iterations : 0);
+        result.setBlockedCount(0); // INSERT operations are typically not blocked
+        
+        if (!timings.isEmpty()) {
+            result.setAvgTimeMs((double) totalTimeNanos / timings.size() / 1_000_000.0);
+            result.setOpsPerSecond(timings.size() * 1_000_000_000.0 / totalTimeNanos);
+            
+            // Calculate percentiles
+            Collections.sort(timings);
+            result.setP50TimeMs(calculatePercentile(timings, 50));
+            result.setP95TimeMs(calculatePercentile(timings, 95));
+            result.setP99TimeMs(calculatePercentile(timings, 99));
+        }
         
         return result;
     }
     
     @Transactional
-    private OperationResult benchmarkUpdate(int iterations) {
-        OperationResult result = new OperationResult();
-        result.setOperation("update");
+    private MultiBenchmarkResult.OperationResult benchmarkUpdate(int iterations) {
+        MultiBenchmarkResult.OperationResult result = new MultiBenchmarkResult.OperationResult();
+        result.setIterations(iterations);
         
-        // Get existing products
-        List<Product> products = productRepository.findAll();
-        if (products.isEmpty()) {
+        // Get product IDs for updates
+        Long minId = productRepository.findMinId();
+        Long maxId = productRepository.findMaxId();
+        
+        if (minId == null || maxId == null) {
             result.setError("No products found for UPDATE benchmark");
             return result;
         }
         
-        long startTime = System.currentTimeMillis();
+        List<Long> timings = new ArrayList<>();
         int successCount = 0;
         int blockedCount = 0;
         int errorCount = 0;
         
-        for (int i = 0; i < iterations; i++) {
+        // Warm-up phase
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             try {
-                // Update a random product
-                Product randomProduct = products.get(ThreadLocalRandom.current().nextInt(products.size()));
-                Optional<Product> productOpt = productRepository.findById(randomProduct.getId());
+                Long randomId = ThreadLocalRandom.current().nextLong(minId, maxId + 1);
+                Optional<Product> productOpt = productRepository.findById(randomId);
                 
                 if (productOpt.isPresent()) {
                     Product product = productOpt.get();
-                    product.setDescription("Updated at " + System.currentTimeMillis() + "_" + i);
+                    product.setDescription("Warmup update " + i);
                     productRepository.save(product);
+                }
+            } catch (Exception e) {
+                // Ignore warmup errors
+            }
+        }
+        
+        // Actual benchmark
+        long totalTimeNanos = 0;
+        for (int i = 0; i < iterations; i++) {
+            try {
+                Long randomId = ThreadLocalRandom.current().nextLong(minId, maxId + 1);
+                Optional<Product> productOpt = productRepository.findById(randomId);
+                
+                if (productOpt.isPresent()) {
+                    Product product = productOpt.get();
+                    product.setDescription("Updated at " + System.nanoTime() + "_" + i);
+                    
+                    long opStart = System.nanoTime();
+                    productRepository.save(product);
+                    long opEnd = System.nanoTime();
+                    
+                    timings.add(opEnd - opStart);
                     successCount++;
                 }
             } catch (Exception e) {
@@ -206,52 +328,83 @@ public class BenchmarkService {
             }
         }
         
-        long executionTime = System.currentTimeMillis() - startTime;
-        result.setExecutionTime(executionTime);
+        // Calculate total time from timings
+        totalTimeNanos = timings.stream().mapToLong(Long::longValue).sum();
+        
+        result.setTotalTimeMs((double) totalTimeNanos / 1_000_000.0);
         result.setSuccessCount(successCount);
         result.setBlockedCount(blockedCount);
         result.setErrorCount(errorCount);
-        result.setAverageTimePerOperation(iterations > 0 ? (double) executionTime / iterations : 0);
+        
+        if (!timings.isEmpty()) {
+            result.setAvgTimeMs((double) totalTimeNanos / timings.size() / 1_000_000.0);
+            result.setOpsPerSecond(timings.size() * 1_000_000_000.0 / totalTimeNanos);
+            
+            // Calculate percentiles
+            Collections.sort(timings);
+            result.setP50TimeMs(calculatePercentile(timings, 50));
+            result.setP95TimeMs(calculatePercentile(timings, 95));
+            result.setP99TimeMs(calculatePercentile(timings, 99));
+        }
         
         return result;
     }
     
     @Transactional
-    private OperationResult benchmarkDelete(int iterations) {
-        OperationResult result = new OperationResult();
-        result.setOperation("delete");
+    private MultiBenchmarkResult.OperationResult benchmarkDelete(int iterations) {
+        MultiBenchmarkResult.OperationResult result = new MultiBenchmarkResult.OperationResult();
+        result.setIterations(iterations);
         
-        // First, create products to delete
-        List<Long> createdIds = new ArrayList<>();
-        for (int i = 0; i < iterations; i++) {
+        List<Long> timings = new ArrayList<>();
+        int successCount = 0;
+        int blockedCount = 0;
+        int errorCount = 0;
+        
+        // Create products to delete (including warmup)
+        List<Long> allIds = new ArrayList<>();
+        int totalToCreate = iterations + WARMUP_ITERATIONS;
+        
+        for (int i = 0; i < totalToCreate; i++) {
             try {
                 Product product = new Product();
-                product.setName("Delete Benchmark " + System.currentTimeMillis() + "_" + i);
+                product.setName("Delete Benchmark " + System.nanoTime() + "_" + i);
                 product.setCategory("DeleteBenchmark");
                 product.setPrice(new BigDecimal("1.99"));
                 product.setStockQuantity(1);
                 product.setDescription("To be deleted");
                 
                 Product saved = productRepository.save(product);
-                createdIds.add(saved.getId());
+                allIds.add(saved.getId());
             } catch (Exception e) {
                 log.debug("Failed to create product for delete benchmark: {}", e.getMessage());
             }
         }
         
-        if (createdIds.isEmpty()) {
-            result.setError("Failed to create products for DELETE benchmark");
+        if (allIds.size() < iterations) {
+            result.setError("Failed to create enough products for DELETE benchmark");
             return result;
         }
         
-        long startTime = System.currentTimeMillis();
-        int successCount = 0;
-        int blockedCount = 0;
-        int errorCount = 0;
-        
-        for (Long id : createdIds) {
+        // Warm-up phase - delete first WARMUP_ITERATIONS products
+        for (int i = 0; i < Math.min(WARMUP_ITERATIONS, allIds.size()); i++) {
             try {
+                productRepository.deleteById(allIds.get(i));
+            } catch (Exception e) {
+                // Ignore warmup errors
+            }
+        }
+        
+        // Actual benchmark - delete remaining products
+        long totalTimeNanos = 0;
+        for (int i = WARMUP_ITERATIONS; i < Math.min(WARMUP_ITERATIONS + iterations, allIds.size()); i++) {
+            try {
+                Long id = allIds.get(i);
+                
+                long opStart = System.nanoTime();
                 productRepository.deleteById(id);
+                long opEnd = System.nanoTime();
+                
+                timings.add(opEnd - opStart);
                 successCount++;
             } catch (Exception e) {
                 if (e.getMessage() != null && 
@@ -266,11 +419,13 @@ public class BenchmarkService {
             }
         }
         
+        // Calculate total time from timings
+        totalTimeNanos = timings.stream().mapToLong(Long::longValue).sum();
+        
         // Clean up any remaining products
-        for (Long id : createdIds) {
+        for (Long id : allIds) {
             try {
                 if (productRepository.existsById(id)) {
-                    // If protection was disabled, try to clean up
                     productRepository.deleteById(id);
                 }
             } catch (Exception e) {
@@ -278,78 +433,34 @@ public class BenchmarkService {
             }
         }
         
-        long executionTime = System.currentTimeMillis() - startTime;
-        result.setExecutionTime(executionTime);
+        result.setTotalTimeMs((double) totalTimeNanos / 1_000_000.0);
         result.setSuccessCount(successCount);
         result.setBlockedCount(blockedCount);
         result.setErrorCount(errorCount);
-        result.setAverageTimePerOperation(iterations > 0 ? (double) executionTime / iterations : 0);
+        
+        if (!timings.isEmpty()) {
+            result.setAvgTimeMs((double) totalTimeNanos / timings.size() / 1_000_000.0);
+            result.setOpsPerSecond(timings.size() * 1_000_000_000.0 / totalTimeNanos);
+            
+            // Calculate percentiles
+            Collections.sort(timings);
+            result.setP50TimeMs(calculatePercentile(timings, 50));
+            result.setP95TimeMs(calculatePercentile(timings, 95));
+            result.setP99TimeMs(calculatePercentile(timings, 99));
+        }
         
         return result;
     }
     
-    public MultiBenchmarkResult runMultiBenchmark(MultiBenchmarkRequest request) {
-        MultiBenchmarkResult result = new MultiBenchmarkResult();
-        result.setTotalIterations(request.getIterations());
-        
-        Map<String, MultiBenchmarkResult.OperationResult> operationResults = new HashMap<>();
-        long totalStartTime = System.currentTimeMillis();
-        
-        // Ensure tables are unprotected for benchmarking on pg_warden backends
-        try {
-            protectionService.unprotectTable("products");
-            protectionService.unprotectTable("customer_payments");
-        } catch (Exception e) {
-            log.warn("Could not unprotect tables - might be vanilla PostgreSQL: {}", e.getMessage());
+    private double calculatePercentile(List<Long> sortedTimings, double percentile) {
+        if (sortedTimings.isEmpty()) {
+            return 0.0;
         }
         
-        for (String operation : request.getOperations()) {
-            MultiBenchmarkResult.OperationResult opResult = new MultiBenchmarkResult.OperationResult();
-            opResult.setIterations(request.getIterations());
-            
-            try {
-                // Run the benchmark for this operation
-                OperationResult benchmarkResult = null;
-                switch (operation.toUpperCase()) {
-                    case "SELECT":
-                        benchmarkResult = benchmarkSelect(request.getIterations());
-                        break;
-                    case "INSERT":
-                        benchmarkResult = benchmarkInsert(request.getIterations());
-                        break;
-                    case "UPDATE":
-                        benchmarkResult = benchmarkUpdate(request.getIterations());
-                        break;
-                    case "DELETE":
-                        benchmarkResult = benchmarkDelete(request.getIterations());
-                        break;
-                    default:
-                        opResult.setError("Unknown operation: " + operation);
-                        operationResults.put(operation, opResult);
-                        continue;
-                }
-                
-                if (benchmarkResult != null) {
-                    opResult.setTotalTimeMs(benchmarkResult.getExecutionTime());
-                    opResult.setAvgTimeMs(benchmarkResult.getAverageTimePerOperation());
-                    if (benchmarkResult.getExecutionTime() > 0) {
-                        opResult.setOpsPerSecond((double) request.getIterations() * 1000 / benchmarkResult.getExecutionTime());
-                    }
-                    if (benchmarkResult.getError() != null) {
-                        opResult.setError(benchmarkResult.getError());
-                    }
-                }
-            } catch (Exception e) {
-                opResult.setError("Failed to run " + operation + ": " + e.getMessage());
-                log.error("Benchmark failed for operation: " + operation, e);
-            }
-            
-            operationResults.put(operation, opResult);
-        }
+        int index = (int) Math.ceil(percentile / 100.0 * sortedTimings.size()) - 1;
+        index = Math.max(0, Math.min(index, sortedTimings.size() - 1));
         
-        result.setTotalTimeMs(System.currentTimeMillis() - totalStartTime);
-        result.setOperationResults(operationResults);
-        
-        return result;
+        // Convert nanoseconds to milliseconds
+        return sortedTimings.get(index) / 1_000_000.0;
     }
 }

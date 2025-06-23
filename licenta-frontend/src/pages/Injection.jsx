@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Typography, TextField, Button, Divider, Paper, Box } from '@mui/material';
 import { toast } from 'react-toastify';
-import Ribbon from '../components/Ribbon';
 import BackendSelectorWithToggle from '../components/BackendSelectorWithToggle';
 import API from '../api';
+import { useTheme } from '../context/ThemeContext';
 
 const Injection = ({ selectedBackend, setSelectedBackend }) => {
+  const { colors, isDarkMode } = useTheme();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -49,13 +50,21 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
         toast.success('SQL injection blocked by pg_warden');
       }
     } catch (err) {
-      setError(err.message || 'Query failed - injection blocked or invalid');
-      
       // Check if it's a 404 (endpoint not available on JPA backends)
       if (err.message && err.message.includes('404')) {
         setError('Test endpoints only available on JDBC backends (ports 8083, 8084, 8086)');
         toast.warning('Switch to a JDBC backend to test SQL injection');
+      } else if (!isJDBC()) {
+        // On JPA backends, any error means the injection was blocked
+        setResult({
+          success: false,
+          error: err.message || 'Query failed - injection blocked by JPA',
+          attemptedQuery: `DELETE FROM customer_payments WHERE id = ${injection}`
+        });
+        toast.success('SQL injection blocked by JPA parameterized queries');
       } else {
+        // On JDBC backends, this is an actual error
+        setError(err.message || 'Query failed - injection blocked or invalid');
         toast.error('SQL injection blocked or failed');
       }
     } finally {
@@ -100,28 +109,27 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
 
   return (
     <div className="page-container">
-      <Ribbon />
       <div className="page-content">
         <div className="sidebar">
           <BackendSelectorWithToggle value={selectedBackend} onChange={setSelectedBackend} />
           
-          <Typography variant="h5" gutterBottom>
+          <Typography variant="h5" gutterBottom style={{ color: colors.text }}>
             SQL Injection Demo
           </Typography>
 
-          <Typography variant="body2" color="textSecondary" gutterBottom>
+          <Typography variant="body2" gutterBottom style={{ color: colors.textSecondary }}>
             Current backend: {getBackendType()}
           </Typography>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider sx={{ my: 2, borderColor: colors.border }} />
 
           <Typography variant="body2" gutterBottom>
             {isJDBC() ? (
-              <span style={{ color: '#d32f2f', fontWeight: 'bold' }}>
+              <span style={{ color: colors.error, fontWeight: 'bold' }}>
                 ⚠️ JDBC backend - Vulnerable to SQL injection!
               </span>
             ) : (
-              <span style={{ color: '#388e3c', fontWeight: 'bold' }}>
+              <span style={{ color: colors.success, fontWeight: 'bold' }}>
                 ✓ JPA backend - Protected against SQL injection
               </span>
             )}
@@ -129,12 +137,12 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
 
           {hasPgWarden() && tableProtectionStatus !== null && (
             <Typography variant="body2" gutterBottom>
-              {tableProtectionStatus.protected ? (
-                <span style={{ color: '#1976d2', fontWeight: 'bold' }}>
-                  🛡️ customer_payments table is PROTECTED by pg_warden
+              {tableProtectionStatus.isProtected ? (
+                <span style={{ color: colors.success, fontWeight: 'bold' }}>
+                  🛡️ customer_payments table is PROTECTED
                 </span>
               ) : (
-                <span style={{ color: '#f57c00', fontWeight: 'bold' }}>
+                <span style={{ color: colors.error, fontWeight: 'bold' }}>
                   ⚠️ customer_payments table is UNPROTECTED
                 </span>
               )}
@@ -143,11 +151,29 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
 
           {!hasPgWarden() && (
             <Typography variant="body2" gutterBottom>
-              <span style={{ color: '#757575', fontWeight: 'bold' }}>
+              <span style={{ color: colors.textSecondary, fontWeight: 'bold' }}>
                 ⚡ Vanilla PostgreSQL - No pg_warden protection
               </span>
             </Typography>
           )}
+
+          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+            <span style={{ color: colors.textSecondary }}>
+              Target endpoint: 
+            </span>
+            <span style={{ 
+              fontFamily: 'monospace', 
+              fontSize: '0.875rem',
+              color: colors.accent,
+              backgroundColor: isDarkMode ? colors.surfaceHover : '#e3f2fd',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              marginLeft: '8px',
+              display: 'inline-block'
+            }}>
+              DELETE /api/test/payments/by-id/{'{id}'}
+            </span>
+          </Typography>
 
           <div className="form-fields">
             <TextField
@@ -159,6 +185,15 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
               fullWidth
               placeholder="Enter SQL injection attempt..."
               InputLabelProps={{ shrink: true }}
+              sx={{
+                '& .MuiInputLabel-root': { color: colors.textSecondary },
+                '& .MuiOutlinedInput-root': { 
+                  color: colors.text,
+                  '& fieldset': { borderColor: colors.border },
+                  '&:hover fieldset': { borderColor: colors.accent },
+                  '&.Mui-focused fieldset': { borderColor: colors.accent },
+                },
+              }}
             />
           </div>
 
@@ -168,15 +203,44 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {injectionExamples.map((example, index) => (
-              <Button
+              <Box
                 key={index}
-                variant="outlined"
-                size="small"
                 onClick={() => handleExampleClick(example)}
-                sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
+                sx={{
+                  p: 1.5,
+                  borderRadius: 1,
+                  border: `1px solid ${colors.border}`,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  backgroundColor: colors.card,
+                  '&:hover': {
+                    backgroundColor: colors.surfaceHover,
+                    borderColor: colors.accent,
+                  }
+                }}
               >
-                {example.label}: {example.value}
-              </Button>
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    fontWeight: 600, 
+                    color: colors.accent,
+                    mb: 0.5 
+                  }}
+                >
+                  {example.label}
+                </Typography>
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    fontFamily: 'monospace',
+                    color: colors.textSecondary,
+                    display: 'block',
+                    wordBreak: 'break-all'
+                  }}
+                >
+                  {example.value}
+                </Typography>
+              </Box>
             ))}
           </Box>
 
@@ -194,7 +258,7 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
         </div>
 
         <div className="main-area">
-          <Typography variant="h5" gutterBottom>
+          <Typography variant="h5" gutterBottom style={{ color: colors.text }}>
             SQL Injection Test Results
           </Typography>
 
@@ -209,11 +273,12 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
                   SQL that will be executed:
                 </Typography>
                 <pre style={{ 
-                  background: '#fff3e0', 
+                  background: colors.card, 
                   padding: '0.5rem', 
                   borderRadius: '4px',
                   fontSize: '0.875rem',
-                  border: '1px solid #ffb74d'
+                  border: `1px solid ${colors.border}`,
+                  color: colors.text
                 }}>
                   DELETE FROM customer_payments WHERE id = {injectionInputRef.current.value}
                 </pre>
@@ -238,11 +303,12 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
                       Executed SQL:
                     </Typography>
                     <pre style={{ 
-                      background: '#ffebee', 
+                      background: colors.card, 
                       padding: '1rem', 
                       borderRadius: '4px',
                       overflow: 'auto',
-                      border: '1px solid #ef5350'
+                      border: `1px solid ${colors.error}`,
+                      color: colors.text
                     }}>
                       {result.executedQuery}
                     </pre>
@@ -250,20 +316,21 @@ const Injection = ({ selectedBackend, setSelectedBackend }) => {
                 ) : (
                   <>
                     <Typography variant="h6" color="success.main" gutterBottom>
-                      ✓ Injection Blocked by pg_warden
+                      ✓ Injection Blocked {!isJDBC() ? 'by JPA' : 'by pg_warden'}
                     </Typography>
                     <Typography color="textSecondary" paragraph>
-                      Error: {result.error}
+                      {!isJDBC() ? 'JPA parameterized queries prevented SQL injection' : `Error: ${result.error}`}
                     </Typography>
                     <Typography variant="body2" color="textSecondary">
                       Attempted SQL:
                     </Typography>
                     <pre style={{ 
-                      background: '#e8f5e9', 
+                      background: colors.card, 
                       padding: '1rem', 
                       borderRadius: '4px',
                       overflow: 'auto',
-                      border: '1px solid #4caf50'
+                      border: `1px solid ${colors.success}`,
+                      color: colors.text
                     }}>
                       {result.attemptedQuery}
                     </pre>

@@ -1,10 +1,12 @@
 #!/bin/bash
-# Server restart script for licenta project
+# Complete application startup script for licenta project
+# Starts all services: PostgreSQL, Spring Boot backends, and React frontend
 
 # Color codes for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Check if --reset-db flag is provided
@@ -50,13 +52,26 @@ docker compose up -d --build
 if [[ $? -eq 0 ]]; then
     echo -e "${GREEN}Containers started successfully!${NC}"
     echo
-    echo "Services available at:"
+    echo -e "${BLUE}=== Services Overview ===${NC}"
+    echo
+    echo -e "${GREEN}Frontend:${NC}"
+    echo "  - React App: http://localhost:3000"
+    echo
+    echo -e "${GREEN}Backend Services:${NC}"
+    echo "  - JPA + Warden Admin:    http://localhost:8081"
+    echo "  - JPA + Warden User:     http://localhost:8082"
+    echo "  - JDBC + Warden Admin:   http://localhost:8083"
+    echo "  - JDBC + Warden User:    http://localhost:8084"
+    echo "  - JPA + Vanilla Admin:   http://localhost:8085"
+    echo "  - JDBC + Vanilla Admin:  http://localhost:8086"
+    echo
+    echo -e "${GREEN}Database Services:${NC}"
     echo "  - PostgreSQL: localhost:5433"
     echo "  - pgAdmin: http://localhost:5050"
     echo "    Email: admin@licenta.com"
     echo "    Password: admin"
     echo
-    echo "Database users:"
+    echo -e "${GREEN}Database Users:${NC}"
     echo "  - postgres / postgres (superuser)"
     echo "  - warden_admin_user / warden_admin_pass (table protection admin)"
     echo "  - regular_user / regular_user_pass (regular user)"
@@ -66,6 +81,9 @@ if [[ $? -eq 0 ]]; then
         echo -e "${YELLOW}Note: PostgreSQL database was recreated from scratch (initialization script was run)${NC}"
         echo -e "${GREEN}pgAdmin settings and saved servers were preserved${NC}"
     fi
+    
+    echo
+    echo -e "${BLUE}To stop all services, run: docker compose down${NC}"
 else
     echo -e "${RED}Failed to start containers${NC}"
     exit 1

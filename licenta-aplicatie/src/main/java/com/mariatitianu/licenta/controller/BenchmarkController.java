@@ -1,7 +1,5 @@
 package com.mariatitianu.licenta.controller;
 
-import com.mariatitianu.licenta.dto.BenchmarkRequest;
-import com.mariatitianu.licenta.dto.BenchmarkResult;
 import com.mariatitianu.licenta.dto.MultiBenchmarkRequest;
 import com.mariatitianu.licenta.dto.MultiBenchmarkResult;
 import com.mariatitianu.licenta.service.BenchmarkService;
@@ -27,23 +25,6 @@ public class BenchmarkController {
         
         try {
             MultiBenchmarkResult result = benchmarkService.runMultiBenchmark(request);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException e) {
-            log.error("Invalid benchmark request: {}", e.getMessage());
-            return ResponseEntity.badRequest().build();
-        } catch (Exception e) {
-            log.error("Benchmark failed", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
-    }
-    
-    @PostMapping("/single")
-    public ResponseEntity<BenchmarkResult> runSingleBenchmark(@RequestBody BenchmarkRequest request) {
-        log.info("Running single benchmark: operation={}, iterations={}, table={}, protection={}",
-                request.getOperation(), request.getIterations(), request.getTableName(), request.getProtectionState());
-        
-        try {
-            BenchmarkResult result = benchmarkService.runBenchmark(request);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException e) {
             log.error("Invalid benchmark request: {}", e.getMessage());

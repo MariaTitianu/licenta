@@ -28,11 +28,13 @@ import {
   FilterList as FilterListIcon
 } from '@mui/icons-material';
 import API from '../api';
+import { useTheme } from '../context/ThemeContext';
 
-const LogsPanel = () => {
+const LogsPanel = ({ currentPath }) => {
+  const { colors, isDarkMode } = useTheme();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(currentPath !== '/benchmark');
   const [lastRefresh, setLastRefresh] = useState(null);
   const [panelHeight, setPanelHeight] = useState(395);
   const [isResizing, setIsResizing] = useState(false);
@@ -90,6 +92,13 @@ const LogsPanel = () => {
   useEffect(() => {
     fetchLogs();
   }, [filters]);
+
+  // Auto-collapse on benchmark page
+  useEffect(() => {
+    if (currentPath === '/benchmark') {
+      setExpanded(false);
+    }
+  }, [currentPath]);
 
   // Auto-scroll to bottom when new logs are added
   useEffect(() => {
@@ -165,6 +174,19 @@ const LogsPanel = () => {
   // Get unique table names from logs
   const tableNames = [...new Set(logs.map(log => log.tableName))].filter(Boolean).sort();
 
+  // Common FormControl styling for dark mode
+  const formControlSx = {
+    minWidth: 150,
+    '& .MuiInputLabel-root': { color: colors.textSecondary },
+    '& .MuiOutlinedInput-root': { 
+      color: colors.text,
+      '& fieldset': { borderColor: colors.border },
+      '&:hover fieldset': { borderColor: colors.accent },
+      '&.Mui-focused fieldset': { borderColor: colors.accent },
+    },
+    '& .MuiSvgIcon-root': { color: colors.textSecondary }
+  };
+
   return (
     <Paper 
       sx={{ 
@@ -174,8 +196,10 @@ const LogsPanel = () => {
         right: 0,
         zIndex: 1200,
         borderTop: 2,
-        borderColor: 'divider',
-        maxHeight: expanded ? panelHeight + 50 : 50
+        borderColor: colors.border,
+        maxHeight: expanded ? panelHeight + 50 : 50,
+        backgroundColor: colors.surface,
+        color: colors.text
       }}
       elevation={8}
     >
@@ -191,7 +215,7 @@ const LogsPanel = () => {
             cursor: 'ns-resize',
             backgroundColor: 'transparent',
             '&:hover': {
-              backgroundColor: 'primary.main',
+              backgroundColor: colors.accent,
               opacity: 0.3
             },
             '&:before': {
@@ -202,7 +226,7 @@ const LogsPanel = () => {
               transform: 'translateX(-50%)',
               width: '40px',
               height: '2px',
-              backgroundColor: 'divider',
+              backgroundColor: colors.border,
               borderRadius: '1px'
             }
           }}
@@ -221,10 +245,11 @@ const LogsPanel = () => {
           justifyContent: 'space-between',
           px: 2,
           py: 1,
-          backgroundColor: 'background.paper',
+          backgroundColor: colors.surface,
           borderBottom: expanded ? 1 : 0,
-          borderColor: 'divider',
-          cursor: 'pointer'
+          borderColor: colors.border,
+          cursor: 'pointer',
+          color: colors.text
         }}
         onClick={() => setExpanded(!expanded)}
       >
@@ -237,6 +262,10 @@ const LogsPanel = () => {
               label={`${logs.length} recent operations`} 
               size="small" 
               variant="outlined"
+              sx={{ 
+                borderColor: colors.border,
+                color: colors.textSecondary 
+              }}
             />
           )}
         </Box>
@@ -280,7 +309,7 @@ const LogsPanel = () => {
         </Box>
       </Box>
 
-      <Collapse in={expanded}>
+      <Collapse in={expanded} timeout={0}>
         {/* Filters */}
         {showFilters && (
           <Box 
@@ -288,12 +317,12 @@ const LogsPanel = () => {
               px: 2, 
               py: 1, 
               borderBottom: 1, 
-              borderColor: 'divider',
-              backgroundColor: 'background.default'
+              borderColor: colors.border,
+              backgroundColor: colors.card
             }}
           >
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <FormControl size="small" sx={{ minWidth: 150 }}>
+              <FormControl size="small" sx={formControlSx}>
                 <InputLabel>Operation</InputLabel>
                 <Select
                   value={filters.operationType}
@@ -310,7 +339,7 @@ const LogsPanel = () => {
                 </Select>
               </FormControl>
               
-              <FormControl size="small" sx={{ minWidth: 150 }}>
+              <FormControl size="small" sx={formControlSx}>
                 <InputLabel>Status</InputLabel>
                 <Select
                   value={filters.status}
@@ -323,7 +352,7 @@ const LogsPanel = () => {
                 </Select>
               </FormControl>
               
-              <FormControl size="small" sx={{ minWidth: 150 }}>
+              <FormControl size="small" sx={formControlSx}>
                 <InputLabel>Table</InputLabel>
                 <Select
                   value={filters.tableName}
@@ -339,7 +368,16 @@ const LogsPanel = () => {
               
               <Button
                 size="small"
+                variant="outlined"
                 onClick={() => setFilters({ operationType: 'all', status: 'all', tableName: 'all' })}
+                sx={{
+                  color: colors.text,
+                  borderColor: colors.border,
+                  '&:hover': {
+                    borderColor: colors.accent,
+                    backgroundColor: colors.surfaceHover,
+                  }
+                }}
               >
                 Clear Filters
               </Button>
@@ -351,7 +389,22 @@ const LogsPanel = () => {
           ref={tableContainerRef}
           sx={{ height: panelHeight - (showFilters ? 100 : 50), overflow: 'auto' }}
         >
-          <Table stickyHeader size="small" sx={{ tableLayout: 'fixed' }}>
+          <Table stickyHeader size="small" sx={{ 
+            tableLayout: 'fixed',
+            backgroundColor: colors.surface,
+            '& .MuiTableCell-root': {
+              color: colors.text,
+              borderBottom: `1px solid ${colors.border}`,
+            },
+            '& .MuiTableCell-head': {
+              backgroundColor: colors.surface,
+              color: colors.text,
+              fontWeight: 600,
+            },
+            '& .MuiTableRow-root:hover': {
+              backgroundColor: colors.surfaceHover,
+            }
+          }}>
             <TableHead>
               <TableRow>
                 <TableCell sx={{ width: '10%' }}>Time</TableCell>
@@ -375,28 +428,77 @@ const LogsPanel = () => {
               ) : (
                 logs.map((log, index) => (
                   <TableRow key={index} hover>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                    <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.875rem' }}>
                       {formatTimestamp(log.operationTime)}
                     </TableCell>
                     <TableCell>
-                      <Chip 
-                        label={log.operationType} 
-                        size="small" 
-                        color={getOperationColor(log.operationType)}
-                        sx={{ fontSize: '0.75rem' }}
-                      />
+                      <div style={{ 
+                        display: 'inline-block',
+                        padding: '2px 10px',
+                        borderRadius: '12px',
+                        fontWeight: '600',
+                        fontSize: '0.75rem',
+                        lineHeight: '1.4',
+                        color: (() => {
+                          const operationColors = {
+                            'DELETE': colors.error,
+                            'UPDATE': colors.warning,
+                            'INSERT': colors.success,
+                            'SELECT': colors.accent,
+                            'ALTER': colors.error,
+                            'DROP': colors.error,
+                            'PROTECT': colors.accent,
+                            'UNPROTECT': colors.accent
+                          };
+                          return operationColors[log.operationType] || colors.text;
+                        })(),
+                        border: `1px solid ${(() => {
+                          const operationColors = {
+                            'DELETE': colors.error,
+                            'UPDATE': colors.warning,
+                            'INSERT': colors.success,
+                            'SELECT': colors.accent,
+                            'ALTER': colors.error,
+                            'DROP': colors.error,
+                            'PROTECT': colors.accent,
+                            'UNPROTECT': colors.accent
+                          };
+                          return operationColors[log.operationType] || colors.border;
+                        })()}`,
+                        backgroundColor: isDarkMode ? 'transparent' : (() => {
+                          const operationBgColors = {
+                            'DELETE': '#ffebee',
+                            'UPDATE': '#fff3e0',
+                            'INSERT': '#e8f5e9',
+                            'SELECT': '#e3f2fd',
+                            'ALTER': '#ffebee',
+                            'DROP': '#ffebee',
+                            'PROTECT': '#e3f2fd',
+                            'UNPROTECT': '#e3f2fd'
+                          };
+                          return operationBgColors[log.operationType] || '#f5f5f5';
+                        })()
+                      }}>
+                        {log.operationType}
+                      </div>
                     </TableCell>
-                    <TableCell>{log.tableName}</TableCell>
+                    <TableCell sx={{ fontSize: '0.875rem' }}>{log.tableName}</TableCell>
                     <TableCell>
-                      <Chip 
-                        label={log.status} 
-                        size="small" 
-                        color={getStatusColor(log.status)}
-                        variant={log.status === 'BLOCKED' ? 'filled' : 'outlined'}
-                        sx={{ fontSize: '0.75rem' }}
-                      />
+                      <div style={{ 
+                        display: 'inline-block',
+                        padding: '2px 10px',
+                        borderRadius: '12px',
+                        fontWeight: '600',
+                        fontSize: '0.75rem',
+                        lineHeight: '1.4',
+                        color: log.status === 'BLOCKED' ? colors.error : colors.success,
+                        border: `1px solid ${log.status === 'BLOCKED' ? colors.error : colors.success}`,
+                        backgroundColor: isDarkMode ? 'transparent' : (log.status === 'BLOCKED' ? '#ffebee' : '#e8f5e9')
+                      }}>
+                        {log.status}
+                      </div>
                     </TableCell>
-                    <TableCell>{log.userName}</TableCell>
+                    <TableCell sx={{ fontSize: '0.875rem' }}>{log.userName}</TableCell>
                     <TableCell 
                       sx={{ 
                         overflow: 'hidden', 
@@ -420,7 +522,7 @@ const LogsPanel = () => {
                       title={log.blockedReason}
                     >
                       {log.status === 'BLOCKED' ? (
-                        <Typography variant="caption" color="error">
+                        <Typography variant="caption" sx={{ color: colors.text }}>
                           {log.blockedReason || '-'}
                         </Typography>
                       ) : (

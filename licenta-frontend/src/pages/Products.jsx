@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Typography, TextField, Button, Divider } from '@mui/material';
 import { toast } from 'react-toastify';
-import Ribbon from '../components/Ribbon';
 import BackendSelectorWithToggle from '../components/BackendSelectorWithToggle';
 import CustomTable from '../components/CustomTable';
 import API from '../api';
+import { useTheme } from '../context/ThemeContext';
 
 const Products = ({ selectedBackend, setSelectedBackend }) => {
+  const { colors } = useTheme();
   const [products, setProducts] = useState([]);
   const [protectionStatus, setProtectionStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -152,28 +153,42 @@ const Products = ({ selectedBackend, setSelectedBackend }) => {
 
   const columns = [
     { field: 'id', headerName: 'ID', width: 70 },
-    { field: 'name', headerName: 'Name', flex: 1 },
-    { field: 'description', headerName: 'Description', flex: 2 },
-    { field: 'price', headerName: 'Price', width: 100, valueFormatter: (value) => value != null ? `$${value}` : '$0' },
+    { field: 'name', headerName: 'Name', flex: 1, minWidth: 150 },
+    { field: 'description', headerName: 'Description', flex: 2, minWidth: 200 },
+    { field: 'price', headerName: 'Price', width: 120, valueFormatter: (value) => value != null ? `$${value}` : '$0' },
     { field: 'stockQuantity', headerName: 'Stock', width: 100 },
   ];
 
+  // Common TextField styling for dark mode
+  const textFieldSx = {
+    '& .MuiInputLabel-root': { color: colors.textSecondary },
+    '& .MuiOutlinedInput-root': { 
+      color: colors.text,
+      '& fieldset': { borderColor: colors.border },
+      '&:hover fieldset': { borderColor: colors.accent },
+      '&.Mui-focused fieldset': { borderColor: colors.accent },
+      '&.Mui-disabled': {
+        '& fieldset': { borderColor: colors.border },
+      }
+    },
+    '& .Mui-disabled': { color: colors.textSecondary }
+  };
+
   return (
     <div className="page-container">
-      <Ribbon />
       <div className="page-content">
         <div className="sidebar">
           <BackendSelectorWithToggle value={selectedBackend} onChange={setSelectedBackend} />
           
-          <Typography variant="h5" gutterBottom>
+          <Typography variant="h5" gutterBottom style={{ color: colors.text }}>
             Products Management
           </Typography>
 
-          <div className={`protection-badge ${protectionStatus ? 'protected' : 'unprotected'}`}>
-            {protectionStatus ? 'PROTECTED' : 'UNPROTECTED'}
+          <div className={`protection-badge ${protectionStatus === null ? 'loading' : protectionStatus ? 'protected' : 'unprotected'}`}>
+            {protectionStatus === null ? 'CHECKING...' : protectionStatus ? 'PROTECTED' : 'UNPROTECTED'}
           </div>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider sx={{ my: 2, borderColor: colors.border }} />
 
           <div className="form-fields">
             <TextField
@@ -182,6 +197,7 @@ const Products = ({ selectedBackend, setSelectedBackend }) => {
               inputRef={idRef}
               disabled
               InputLabelProps={{ shrink: true }}
+              sx={textFieldSx}
             />
             <TextField
               label="Name"
@@ -189,6 +205,7 @@ const Products = ({ selectedBackend, setSelectedBackend }) => {
               inputRef={nameRef}
               required
               InputLabelProps={{ shrink: true }}
+              sx={textFieldSx}
             />
             <TextField
               label="Description"
@@ -197,6 +214,7 @@ const Products = ({ selectedBackend, setSelectedBackend }) => {
               multiline
               rows={2}
               InputLabelProps={{ shrink: true }}
+              sx={textFieldSx}
             />
             <TextField
               label="Price"
@@ -206,6 +224,7 @@ const Products = ({ selectedBackend, setSelectedBackend }) => {
               required
               InputLabelProps={{ shrink: true }}
               inputProps={{ step: 0.01 }}
+              sx={textFieldSx}
             />
             <TextField
               label="Stock"
@@ -214,6 +233,7 @@ const Products = ({ selectedBackend, setSelectedBackend }) => {
               inputRef={stockRef}
               required
               InputLabelProps={{ shrink: true }}
+              sx={textFieldSx}
             />
           </div>
 
@@ -252,7 +272,6 @@ const Products = ({ selectedBackend, setSelectedBackend }) => {
             columns={columns}
             onRowClick={handleRowClick}
             getRowId={(row) => row.id}
-            height="100%"
           />
         </div>
       </div>

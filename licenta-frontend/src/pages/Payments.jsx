@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Typography, TextField, Button, Divider } from '@mui/material';
 import { toast } from 'react-toastify';
-import Ribbon from '../components/Ribbon';
 import BackendSelectorWithToggle from '../components/BackendSelectorWithToggle';
 import CustomTable from '../components/CustomTable';
 import API from '../api';
+import { useTheme } from '../context/ThemeContext';
 
 const Payments = ({ selectedBackend, setSelectedBackend }) => {
+  const { colors } = useTheme();
   const [payments, setPayments] = useState([]);
   const [protectionStatus, setProtectionStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -158,8 +159,8 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
 
   const columns = [
     { field: 'id', headerName: 'ID', width: 70 },
-    { field: 'customerName', headerName: 'Customer Name', flex: 1 },
-    { field: 'cardType', headerName: 'Card Type', width: 120 },
+    { field: 'customerName', headerName: 'Customer Name', flex: 1.5, minWidth: 180 },
+    { field: 'cardType', headerName: 'Card Type', flex: 0.8, minWidth: 120 },
     { field: 'cardLastFourDigits', headerName: 'Card Last 4', width: 100 },
     { 
       field: 'amount', 
@@ -170,27 +171,42 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
     { 
       field: 'paymentDate', 
       headerName: 'Payment Date', 
-      width: 150,
+      flex: 1, 
+      minWidth: 150,
       renderCell: (params) => params.value ? new Date(params.value).toLocaleDateString() : ''
     },
   ];
 
+  // Common TextField styling for dark mode
+  const textFieldSx = {
+    '& .MuiInputLabel-root': { color: colors.textSecondary },
+    '& .MuiOutlinedInput-root': { 
+      color: colors.text,
+      '& fieldset': { borderColor: colors.border },
+      '&:hover fieldset': { borderColor: colors.accent },
+      '&.Mui-focused fieldset': { borderColor: colors.accent },
+      '&.Mui-disabled': {
+        '& fieldset': { borderColor: colors.border },
+      }
+    },
+    '& .Mui-disabled': { color: colors.textSecondary }
+  };
+
   return (
     <div className="page-container">
-      <Ribbon />
       <div className="page-content">
         <div className="sidebar">
           <BackendSelectorWithToggle value={selectedBackend} onChange={setSelectedBackend} />
           
-          <Typography variant="h5" gutterBottom>
+          <Typography variant="h5" gutterBottom style={{ color: colors.text }}>
             Payments Management
           </Typography>
 
-          <div className={`protection-badge ${protectionStatus ? 'protected' : 'unprotected'}`}>
-            {protectionStatus ? 'PROTECTED' : 'UNPROTECTED'}
+          <div className={`protection-badge ${protectionStatus === null ? 'loading' : protectionStatus ? 'protected' : 'unprotected'}`}>
+            {protectionStatus === null ? 'CHECKING...' : protectionStatus ? 'PROTECTED' : 'UNPROTECTED'}
           </div>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider sx={{ my: 2, borderColor: colors.border }} />
 
           <div className="form-fields">
             <TextField
@@ -199,6 +215,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
               inputRef={idRef}
               disabled
               InputLabelProps={{ shrink: true }}
+              sx={textFieldSx}
             />
             <TextField
               label="Customer Name"
@@ -206,6 +223,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
               inputRef={customerNameRef}
               required
               InputLabelProps={{ shrink: true }}
+              sx={textFieldSx}
             />
             <TextField
               label="Card Type"
@@ -213,6 +231,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
               inputRef={cardTypeRef}
               required
               InputLabelProps={{ shrink: true }}
+              sx={textFieldSx}
             />
             <TextField
               label="Card Last 4 Digits"
@@ -221,6 +240,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
               required
               InputLabelProps={{ shrink: true }}
               inputProps={{ maxLength: 4 }}
+              sx={textFieldSx}
             />
             <TextField
               label="Amount"
@@ -230,6 +250,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
               required
               InputLabelProps={{ shrink: true }}
               inputProps={{ step: 0.01 }}
+              sx={textFieldSx}
             />
             <TextField
               label="Payment Date"
@@ -238,6 +259,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
               inputRef={paymentDateRef}
               required
               InputLabelProps={{ shrink: true }}
+              sx={textFieldSx}
             />
           </div>
 
@@ -276,7 +298,6 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
             columns={columns}
             onRowClick={handleRowClick}
             getRowId={(row) => row.id}
-            height="100%"
           />
         </div>
       </div>

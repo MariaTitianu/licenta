@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { Typography, TextField, Button, Divider } from '@mui/material';
 import { toast } from 'react-toastify';
-import Ribbon from '../components/Ribbon';
 import BackendSelectorWithToggle from '../components/BackendSelectorWithToggle';
 import CustomTable from '../components/CustomTable';
 import API from '../api';
+import { useTheme } from '../context/ThemeContext';
+import { useProtection } from '../context/ProtectionContext';
 
 const Protection = ({ selectedBackend, setSelectedBackend }) => {
+  const { colors, isDarkMode } = useTheme();
+  const { refreshProtectionStatuses } = useProtection();
   const [protectionSummary, setProtectionSummary] = useState({ protected: [], unprotected: [] });
   const [selectedTable, setSelectedTable] = useState('');
   const [selectedStatus, setSelectedStatus] = useState(null);
@@ -17,6 +20,12 @@ const Protection = ({ selectedBackend, setSelectedBackend }) => {
 
   // Fetch protection summary on mount and backend change
   useEffect(() => {
+    // Clear selection when backend changes
+    setSelectedTable('');
+    setSelectedStatus(null);
+    if (tableNameRef.current) {
+      tableNameRef.current.value = '';
+    }
     fetchProtectionSummary();
   }, [selectedBackend]);
 
@@ -63,12 +72,15 @@ const Protection = ({ selectedBackend, setSelectedBackend }) => {
       const result = await API.protection.protect(selectedTable);
       if (result.changed) {
         toast.success(`Table '${selectedTable}' is now protected`);
+        setSelectedStatus(true); // Update the UI immediately
       } else {
         toast.info(`Table '${selectedTable}' was already protected`);
       }
       fetchProtectionSummary();
       // Refresh logs
       setTimeout(() => API.logs.getRecent(), 500);
+      // Refresh sidebar protection status
+      refreshProtectionStatuses();
     } catch (error) {
       toast.error(error.message || 'Failed to protect table');
     } finally {
@@ -91,12 +103,15 @@ const Protection = ({ selectedBackend, setSelectedBackend }) => {
       const result = await API.protection.unprotect(selectedTable);
       if (result.changed) {
         toast.success(`Table '${selectedTable}' is now unprotected`);
+        setSelectedStatus(false); // Update the UI immediately
       } else {
         toast.info(`Table '${selectedTable}' was already unprotected`);
       }
       fetchProtectionSummary();
       // Refresh logs
       setTimeout(() => API.logs.getRecent(), 500);
+      // Refresh sidebar protection status
+      refreshProtectionStatuses();
     } catch (error) {
       toast.error(error.message || 'Failed to unprotect table');
     } finally {
@@ -115,30 +130,44 @@ const Protection = ({ selectedBackend, setSelectedBackend }) => {
     { 
       field: 'isProtected', 
       headerName: 'Status', 
-      width: 150,
+      flex: 1,
       renderCell: (params) => (
-        <span style={{ 
-          color: params.value ? '#2e7d32' : '#c62828',
-          fontWeight: 'bold'
+        <div style={{ 
+          display: 'flex',
+          justifyContent: 'flex-start',
+          alignItems: 'center',
+          width: '100%',
+          height: '100%'
         }}>
-          {params.value ? 'Protected' : 'Unprotected'}
-        </span>
+          <div style={{ 
+            display: 'inline-block',
+            padding: '4px 12px',
+            borderRadius: '16px',
+            fontWeight: '600',
+            fontSize: '0.8125rem',
+            lineHeight: '1.5',
+            color: isDarkMode ? (params.value ? colors.success : colors.error) : (params.value ? '#2e7d32' : '#c62828'),
+            border: `1px solid ${isDarkMode ? (params.value ? colors.success : colors.error) : (params.value ? '#66bb6a' : '#ef5350')}`,
+            backgroundColor: isDarkMode ? 'transparent' : (params.value ? '#e8f5e9' : '#ffebee')
+          }}>
+            {params.value ? 'PROTECTED' : 'UNPROTECTED'}
+          </div>
+        </div>
       )
     },
   ];
 
   return (
     <div className="page-container">
-      <Ribbon />
       <div className="page-content">
         <div className="sidebar">
           <BackendSelectorWithToggle value={selectedBackend} onChange={setSelectedBackend} />
           
-          <Typography variant="h5" gutterBottom>
+          <Typography variant="h5" gutterBottom style={{ color: colors.text }}>
             Protection Management
           </Typography>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider sx={{ my: 2, borderColor: colors.border }} />
 
           <div className="form-fields">
             <TextField
@@ -147,11 +176,22 @@ const Protection = ({ selectedBackend, setSelectedBackend }) => {
               inputRef={tableNameRef}
               disabled
               InputLabelProps={{ shrink: true }}
+              sx={{
+                '& .MuiInputLabel-root': { color: colors.textSecondary },
+                '& .MuiOutlinedInput-root': { 
+                  color: colors.text,
+                  '& fieldset': { borderColor: colors.border },
+                  '&.Mui-disabled': {
+                    '& fieldset': { borderColor: colors.border },
+                  }
+                },
+                '& .Mui-disabled': { color: colors.textSecondary }
+              }}
             />
             
-            {selectedStatus !== null && (
-              <div className={`protection-badge ${selectedStatus ? 'protected' : 'unprotected'}`}>
-                {selectedStatus ? 'PROTECTED' : 'UNPROTECTED'}
+            {selectedTable && (
+              <div className={`protection-badge ${selectedStatus === null ? 'loading' : selectedStatus ? 'protected' : 'unprotected'}`}>
+                {selectedStatus === null ? 'CHECKING...' : selectedStatus ? 'PROTECTED' : 'UNPROTECTED'}
               </div>
             )}
           </div>
@@ -175,15 +215,15 @@ const Protection = ({ selectedBackend, setSelectedBackend }) => {
             </Button>
           </div>
 
-          <Divider sx={{ my: 3 }} />
+          <Divider sx={{ my: 3, borderColor: colors.border }} />
 
-          <Typography variant="body2" color="textSecondary" gutterBottom>
+          <Typography variant="body2" gutterBottom style={{ color: colors.textSecondary }}>
             <strong>Summary:</strong>
           </Typography>
-          <Typography variant="body2" color="textSecondary">
+          <Typography variant="body2" style={{ color: colors.textSecondary }}>
             Protected tables: {protectionSummary.protected.length}
           </Typography>
-          <Typography variant="body2" color="textSecondary">
+          <Typography variant="body2" style={{ color: colors.textSecondary }}>
             Unprotected tables: {protectionSummary.unprotected.length}
           </Typography>
         </div>
@@ -195,7 +235,6 @@ const Protection = ({ selectedBackend, setSelectedBackend }) => {
             columns={columns}
             onRowClick={handleRowClick}
             getRowId={(row) => row.tableName}
-            height="100%"
           />
         </div>
       </div>

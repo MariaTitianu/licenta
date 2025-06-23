@@ -238,6 +238,42 @@ public class ProductJdbcRepository implements ProductRepository {
         return products;
     }
     
+    @Override
+    public Long findMinId() {
+        String sql = "SELECT MIN(id) FROM products";
+        
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Error finding min product ID", e);
+        }
+        
+        return null;
+    }
+    
+    @Override
+    public Long findMaxId() {
+        String sql = "SELECT MAX(id) FROM products";
+        
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Error finding max product ID", e);
+        }
+        
+        return null;
+    }
+    
     private Product mapRowToProduct(ResultSet rs) throws SQLException {
         Product product = new Product();
         product.setId(rs.getLong("id"));
