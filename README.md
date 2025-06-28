@@ -23,16 +23,32 @@ A Java web application for managing table protections through a user-friendly in
 
 ### Option 1: Docker (Recommended - One-Click Setup)
 
+#### Linux/macOS:
 ```bash
-docker compose up -d --build
+./start-app.sh              # Start all services (preserves data)
+./start-app.sh --reset-db   # Start and wipe PostgreSQL data
+```
+
+#### Windows:
+```powershell
+# First time only - enable PowerShell script execution:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Then run:
+./start-app.ps1              # Start all services (preserves data)
+./start-app.ps1 -ResetDb     # Start and wipe PostgreSQL data
 ```
 
 This automatically:
 - Builds and installs the pg_warden extension
 - Creates a PostgreSQL database with demo data
 - Sets up pgAdmin for database management
+- Starts 6 Spring Boot backend variants
+- Starts React frontend on port 3000
 
-**Connection Details:**
+**Services:**
+- Frontend: http://localhost:3000
+- Backend APIs: http://localhost:8081-8086
 - PostgreSQL: `localhost:5433` (database: `licenta_db`)
   - Admin user: `warden_admin_user` / `warden_admin_pass`
   - Regular user: `regular_user` / `regular_user_pass`
