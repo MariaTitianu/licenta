@@ -22,7 +22,7 @@ public class LogJdbcRepository implements LogRepository {
     @Override
     public List<Map<String, Object>> getRecentOperations(int limit) {
         // VULNERABLE: Direct integer concatenation (less risky but still vulnerable)
-        String sql = "SELECT * FROM warden_all_queries() LIMIT " + limit;
+        String sql = "SELECT * FROM warden_all_queries() ORDER BY log_timestamp DESC LIMIT " + limit;
         List<Map<String, Object>> results = new ArrayList<>();
         
         try (Connection conn = dataSource.getConnection();
@@ -49,7 +49,7 @@ public class LogJdbcRepository implements LogRepository {
     
     @Override
     public List<Map<String, Object>> getAllOperations() {
-        String sql = "SELECT * FROM warden_all_queries()";
+        String sql = "SELECT * FROM warden_all_queries() ORDER BY log_timestamp DESC";
         List<Map<String, Object>> results = new ArrayList<>();
         
         try (Connection conn = dataSource.getConnection();

@@ -70,7 +70,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
       cardType: cardTypeRef.current.value,
       cardLastFourDigits: cardLastFourDigitsRef.current.value,
       amount: parseFloat(amountRef.current.value),
-      paymentDate: paymentDateRef.current.value
+      paymentDate: paymentDateRef.current.value ? `${paymentDateRef.current.value}T00:00:00` : null
     };
 
     if (!paymentData.customerName || !paymentData.amount || !paymentData.paymentDate || 
@@ -106,7 +106,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
       cardType: cardTypeRef.current.value,
       cardLastFourDigits: cardLastFourDigitsRef.current.value,
       amount: parseFloat(amountRef.current.value),
-      paymentDate: paymentDateRef.current.value
+      paymentDate: paymentDateRef.current.value ? `${paymentDateRef.current.value}T00:00:00` : null
     };
 
     setLoading(true);
@@ -173,7 +173,7 @@ const Payments = ({ selectedBackend, setSelectedBackend }) => {
       headerName: 'Payment Date', 
       flex: 1, 
       minWidth: 150,
-      renderCell: (params) => params.value ? new Date(params.value).toLocaleDateString() : ''
+      renderCell: (params) => params.value ? new Date(params.value).toLocaleDateString('en-GB') : ''
     },
   ];
 

@@ -16,10 +16,10 @@ import java.util.Map;
 public interface LogJpaRepository extends LogRepository, JpaRepository<UnprotectedTable, String> {
     
     @Override
-    @Query(value = "SELECT * FROM warden_all_queries() LIMIT :limit", nativeQuery = true)
+    @Query(value = "SELECT * FROM warden_all_queries() ORDER BY log_timestamp DESC LIMIT :limit", nativeQuery = true)
     List<Map<String, Object>> getRecentOperations(@Param("limit") int limit);
     
     @Override
-    @Query(value = "SELECT * FROM warden_all_queries()", nativeQuery = true)
+    @Query(value = "SELECT * FROM warden_all_queries() ORDER BY log_timestamp DESC", nativeQuery = true)
     List<Map<String, Object>> getAllOperations();
 }

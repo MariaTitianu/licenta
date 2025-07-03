@@ -57,15 +57,16 @@ const LogsPanel = ({ currentPath }) => {
     try {
       let data;
       
-      // Apply filters
+      // Apply filters with higher limit
+      const limit = 500; // Fetch up to 500 logs
       if (filters.status === 'blocked') {
-        data = await API.logs.getBlocked();
+        data = await API.logs.getBlocked(limit);
       } else if (filters.status === 'allowed') {
-        data = await API.logs.getAllowed();
+        data = await API.logs.getAllowed(limit);
       } else if (filters.tableName !== 'all') {
-        data = await API.logs.getByTable(filters.tableName);
+        data = await API.logs.getByTable(filters.tableName, limit);
       } else {
-        data = await API.logs.getRecent(100);
+        data = await API.logs.getRecent(limit);
       }
 
       // Filter by operation type if needed
@@ -78,7 +79,11 @@ const LogsPanel = ({ currentPath }) => {
         data = data.filter(log => log.tableName === filters.tableName);
       }
 
-      setLogs(data);
+      // Sort logs by timestamp in descending order (newest first)
+      const sortedLogs = data.sort((a, b) => 
+        new Date(b.operationTime) - new Date(a.operationTime)
+      );
+      setLogs(sortedLogs);
       setLastRefresh(new Date());
     } catch (error) {
       console.error('Failed to fetch logs:', error);
@@ -100,11 +105,11 @@ const LogsPanel = ({ currentPath }) => {
     }
   }, [currentPath]);
 
-  // Auto-scroll to bottom when new logs are added
+  // Keep scroll position at top to see newest logs
   useEffect(() => {
     if (logs.length > previousLogCount.current && tableContainerRef.current && expanded) {
-      // Scroll to bottom with smooth animation
-      tableContainerRef.current.scrollTop = tableContainerRef.current.scrollHeight;
+      // Keep scroll at top to show newest logs
+      tableContainerRef.current.scrollTop = 0;
     }
     previousLogCount.current = logs.length;
   }, [logs, expanded]);

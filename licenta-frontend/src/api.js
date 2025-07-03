@@ -63,11 +63,11 @@ const API = {
 
   // Logs API
   logs: {
-    getAll: () => API.fetch('/api/logs/operations'),
-    getByTable: (tableName) => API.fetch(`/api/logs/operations/table/${tableName}`),
-    getRecent: (limit = 50) => API.fetch(`/api/logs/operations/recent?limit=${limit}`),
-    getBlocked: () => API.fetch('/api/logs/operations/blocked'),
-    getAllowed: () => API.fetch('/api/logs/operations/allowed'),
+    getAll: (limit = 500) => API.fetch(`/api/logs/operations?limit=${limit}`),
+    getByTable: (tableName, limit = 500) => API.fetch(`/api/logs/operations/table/${tableName}?limit=${limit}`),
+    getRecent: (limit = 500) => API.fetch(`/api/logs/operations/recent?limit=${limit}`),
+    getBlocked: (limit = 500) => API.fetch(`/api/logs/operations/blocked?limit=${limit}`),
+    getAllowed: (limit = 500) => API.fetch(`/api/logs/operations/allowed?limit=${limit}`),
     getSummary: () => API.fetch('/api/logs/summary'),
   },
 
